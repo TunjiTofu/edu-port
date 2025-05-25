@@ -37,8 +37,14 @@ return [
 
     'guards' => [
         'web' => [
+        'driver' => 'session',
+        'provider' => 'users',
+        'cookie' => 'laravel_session', // Default
+        ],
+        'filament' => [
             'driver' => 'session',
             'provider' => 'users',
+            'cookie' => 'filament_session', // Unique cookie name
         ],
     ],
 

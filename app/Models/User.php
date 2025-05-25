@@ -57,6 +57,12 @@ class User extends Authenticatable
         return $this->belongsTo(District::class);
     }
 
+    public function church() : BelongsTo
+    {
+        return $this->belongsTo(Church::class);
+    }
+
+
     public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class, 'student_id');

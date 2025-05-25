@@ -21,10 +21,16 @@ class RolesTableSeeder extends Seeder
                 'permissions' => ['*']
             ],
             [
-                'name' => 'trainer',
+                'name' => 'reviewer',
                 'display_name' => 'Training Coordinator',
                 'description' => 'Manages training programs and reviews submissions',
                 'permissions' => ['manage-programs', 'review-submissions']
+            ],
+            [
+                'name' => 'observer',
+                'display_name' => 'Training Observer',
+                'description' => 'Can view training programs and submissions',
+                'permissions' => ['view-programs', 'view-submissions']
             ],
             [
                 'name' => 'student',

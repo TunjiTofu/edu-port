@@ -17,4 +17,12 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+Route::get('/check-auth', function() {
+    return [
+        'filament_auth' => \Filament\Facades\Filament::auth()->user(),
+        'web_auth' => auth()->user(),
+        'session' => session()->all()
+    ];
+});
+
 require __DIR__.'/auth.php';
