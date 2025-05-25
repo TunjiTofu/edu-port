@@ -51,4 +51,15 @@ class TrainingProgram extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Get the enrollments associated with the training program.
+     *
+     * @return HasMany
+     */
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(ProgramEnrollment::class);
+    }
+
+
 }

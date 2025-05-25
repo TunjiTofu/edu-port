@@ -21,8 +21,8 @@ class Role extends Model
         return $this->hasMany(User::class);
     }
 
-    // public function hasPermission(string $permission): bool
-    // {
-    //     return in_array($permission, $this->permissions ?? []);
-    // }
+    public function hasPermission(string $permission): bool
+    {
+        return in_array($permission, $this->permissions ?? []);
+    }
 }
