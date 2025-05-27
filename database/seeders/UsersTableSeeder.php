@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\District;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -14,42 +15,56 @@ class UsersTableSeeder extends Seeder
      */
     public function run(): void
     {
+        // Get all districts with their churches
+        $districts = District::with('churches')->get();
+
         // Admin user
+        $district = $districts->random();
         User::create([
             'name' => 'Admin User',
             'email' => 'admin@example.com',
             'password' => Hash::make('password'),
             'role_id' => 1,
-            'church_id' => 1,
-            'district_id' => 1,
+            'church_id' => $district->churches->random()->id,
+            'district_id' => $district->id,
             'phone' => '08163513389'
         ]);
 
-        // Trainer users
-        User::factory()->count(3)->create([
-            'role_id' => 2,
-            'church_id' => rand(1, 3),
-            'district_id' => rand(1, 3),
-            'password' => Hash::make('password'),
-            'phone' => '08143452621'
-        ]);
+        // Other users
+        $roles = [
+            ['role' => 2, 'count' => 3],  // Trainers
+            ['role' => 3, 'count' => 2],  // Observers
+            ['role' => 4, 'count' => 10], // Students
+        ];
 
-        // Observer users
-        User::factory()->count(2)->create([
-            'role_id' => 3,
-            'church_id' => rand(1, 3),
-            'district_id' => rand(1, 3),
-            'password' => Hash::make('password'),
-            'phone' => '081000000000'
-        ]);
+        foreach ($roles as $role) {
+            for ($i = 0; $i < $role['count']; $i++) {
+                $district = $districts->random();
+                User::create([
+                    'name' => $this->getRoleName($role['role']) . ' ' . ($i + 1),
+                    'email' => strtolower($this->getRoleName($role['role'])) . $i . '@example.com',
+                    'password' => Hash::make('password'),
+                    'role_id' => $role['role'],
+                    'church_id' => $district->churches->random()->id,
+                    'district_id' => $district->id,
+                    'phone' => $this->generatePhoneNumber()
+                ]);
+            }
+        }
+    }
 
-        // Student users
-        User::factory()->count(10)->create([
-            'role_id' => 4,
-            'church_id' => rand(1, 3),
-            'district_id' => rand(1, 3),
-            'password' => Hash::make('password'),
-            'phone' => '081234567890'
-        ]);
+    private function getRoleName($roleId): string
+    {
+        return match ($roleId) {
+            2 => 'Trainer',
+            3 => 'Observer',
+            4 => 'Student',
+            default => 'User'
+        };
+    }
+
+    private function generatePhoneNumber(): string
+    {
+        return '081' . str_pad(mt_rand(0, 99999999), 11, '0', STR_PAD_LEFT);
     }
 }

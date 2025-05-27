@@ -3,8 +3,9 @@
 namespace Database\Seeders;
 
 use App\Models\Church;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\District;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
 
 class ChurchesTableSeeder extends Seeder
 {
@@ -13,14 +14,40 @@ class ChurchesTableSeeder extends Seeder
      */
     public function run(): void
     {
-        $churches = [
-            ['name' => 'No. 1'],
-            ['name' => 'New Koregun'],
-            ['name' => 'Iperu'],
+        // Get all districts once
+        $districts = District::all();
+
+        // Ensure we have districts before creating churches
+        if ($districts->isEmpty()) {
+            $this->call(DistrictTableSeeder::class);
+            $districts = District::all();
+        }
+
+        // Define base churches with district association
+        $baseChurches = [
+            'No. 1' => 'Ilishan-West District',
+            'New Koregun' => 'Ilishan-West District',
+            'Pioneer' => 'Babcock',
+            'Heritage' => 'Babcock',
+            'Express' => 'Shagamu',
+            'Sabo' => 'Shagamu',
         ];
 
-        foreach ($churches as $church) {
-            Church::create($church);
+        // Create base churches with specific district relationships
+        foreach ($baseChurches as $churchName => $districtName) {
+            Church::firstOrCreate([
+                'name' => $churchName,
+                'district_id' => $districts->firstWhere('name', $districtName)->id,
+                'is_active' => true,
+            ]);
         }
+
+        // // Create additional churches for each district
+        // $districts->each(function ($district) {
+        //     Church::factory()->count(2)->create([
+        //         'district_id' => $district->id,
+        //         'is_active' => true,
+        //     ]);
+        // });
     }
 }

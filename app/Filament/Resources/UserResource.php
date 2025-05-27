@@ -5,6 +5,9 @@ namespace App\Filament\Resources;
 use App\Enums\RoleTypes;
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Models\Church;
+use App\Models\District;
+use App\Models\Role;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
@@ -17,6 +20,8 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class UserResource extends Resource
 {
@@ -27,7 +32,7 @@ class UserResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->isAdmin();
+        return Auth::user()?->isAdmin();
     }
 
 
@@ -40,22 +45,80 @@ class UserResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->required()
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('email')
                             ->email()
                             ->required()
                             ->unique(User::class, 'email', ignoreRecord: true)
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('phone')
                             ->tel()
-                            ->maxLength(20),
-                        
-                        Forms\Components\TextInput::make('student_id')
-                            ->label('Student/Staff ID')
-                            ->unique(User::class, 'student_id', ignoreRecord: true)
-                            ->maxLength(50),
-                    ])->columns(2),
+                            ->maxLength(255),
+                    ])
+                    ->columns(2),
+
+                Section::make('Role & Assignment')
+                    ->schema([
+                        Forms\Components\Select::make('role_id')
+                            ->label('Role')
+                            ->options(Role::all()->pluck('display_name', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->preload(),
+
+                        Forms\Components\Select::make('district_id')
+                            ->label('District')
+                            ->options(District::all()->pluck('name', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->placeholder('Choose a district')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                $set('church_id', null); // Clear church selection when district changes
+                            }),
+
+                        Forms\Components\Select::make('church_id')
+                            ->label('Church')
+                            ->options(function (callable $get) {
+                                $districtId = $get('district_id');
+                                if (!$districtId) {
+                                    return [];
+                                }
+                                return Church::where('district_id', $districtId)->pluck('name', 'id');
+                            })
+                            ->placeholder(function (callable $get) {
+                                return $get('district_id') ? 'Select a church' : 'Select a district first';
+                            })
+                            ->required()
+                            ->searchable()
+                            ->disabled(fn(callable $get) => !$get('district_id'))
+                            ->helperText(function (callable $get) {
+                                $districtId = $get('district_id');
+                                if ($districtId && Church::where('district_id', $districtId)->doesntExist()) {
+                                    return 'No churches available for this district';
+                                }
+                                return null;
+                            }),
+                    ])
+                    ->columns(2),
+
+                Section::make('Security & Status')
+                    ->schema([
+                        Forms\Components\TextInput::make('password')
+                            ->password()
+                            ->required(fn(string $context): bool => $context === 'create')
+                            ->minLength(8)
+                            ->dehydrated(fn($state) => filled($state))
+                            ->dehydrateStateUsing(fn($state) => Hash::make($state))
+                            ->revealable(),
+
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Active Status')
+                            ->default(true),
+                    ])
+                    ->columns(2),
             ]);
     }
 
@@ -66,22 +129,25 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
                     ->sortable(),
-                
-                
+
+                Tables\Columns\TextColumn::make('phone')
+                    ->searchable()
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('role.name')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'student' => 'primary',
                         'reviewer' => 'success',
                         'observer' => 'warning',
                         'admin' => 'danger',
                         default => 'gray',
                     }),
-                
+
                 Tables\Columns\TextColumn::make('district.name')
                     ->label('District')
                     ->sortable(),
@@ -93,7 +159,7 @@ class UserResource extends Resource
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->label('Active'),
-                
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -102,10 +168,10 @@ class UserResource extends Resource
             ->filters([
                 SelectFilter::make('role')
                     ->relationship('role', 'name'),
-                
+
                 SelectFilter::make('district')
                     ->relationship('district', 'name'),
-                
+
                 SelectFilter::make('church')
                     ->relationship('church', 'name'),
 
@@ -146,12 +212,12 @@ class UserResource extends Resource
                             // Prevent deletion of all admins
                             if ($adminCount - $adminRecords < 1) {
                                 Notification::make()
-                                ->title('Request Denied')
-                                ->body('You cannot delete all admin users.')
-                                ->danger()
-                                ->persistent()
-                                ->send();
-                            throw new Halt();
+                                    ->title('Request Denied')
+                                    ->body('You cannot delete all admin users.')
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+                                throw new Halt();
                             }
                         }),
                 ]),
@@ -180,4 +246,5 @@ class UserResource extends Resource
     {
         return parent::getEloquentQuery()->with(['district', 'church']);
     }
+    
 }

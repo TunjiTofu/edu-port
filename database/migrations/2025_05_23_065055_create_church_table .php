@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('churches', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();
+            $table->foreignId('district_id')->constrained();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
