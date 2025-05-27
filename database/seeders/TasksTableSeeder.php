@@ -22,7 +22,7 @@ class TasksTableSeeder extends Seeder
                 'description' => 'Initial knowledge check',
                 'instructions' => 'Complete the assessment questions',
                 'section_id' => $section->id,
-                'max_score' => 100,
+                'max_score' => 8.5,
                 'due_date' => now()->addWeeks(2),
                 'order_index' => 1
             ]);
@@ -32,7 +32,7 @@ class TasksTableSeeder extends Seeder
                 'description' => 'Real-world scenario analysis',
                 'instructions' => 'Submit your analysis report',
                 'section_id' => $section->id,
-                'max_score' => 100,
+                'max_score' => 6,
                 'due_date' => now()->addWeeks(4),
                 'order_index' => 2
             ]);

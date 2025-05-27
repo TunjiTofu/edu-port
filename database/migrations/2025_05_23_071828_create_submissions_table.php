@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\SubmissionTypes;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -21,7 +22,7 @@ return new class extends Migration
             $table->integer('file_size');
             $table->text('content_text')->nullable(); // Extracted text for similarity check
             $table->text('student_notes')->nullable();
-            $table->enum('status', ['submitted', 'under_review', 'completed', 'rejected'])->default('submitted');
+            $table->string('status')->default(SubmissionTypes::PENDING_REVIEW->value);
             $table->timestamp('submitted_at');
             $table->timestamps();
             $table->softDeletes();

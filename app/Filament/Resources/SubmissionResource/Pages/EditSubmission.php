@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Filament\Resources\SectionResource\Pages;
+namespace App\Filament\Resources\SubmissionResource\Pages;
 
-use App\Filament\Resources\SectionResource;
+use App\Filament\Resources\SubmissionResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
-class EditSection extends EditRecord
+class EditSubmission extends EditRecord
 {
-    protected static string $resource = SectionResource::class;
+    protected static string $resource = SubmissionResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -18,10 +18,5 @@ class EditSection extends EditRecord
             Actions\ForceDeleteAction::make(),
             Actions\RestoreAction::make(),
         ];
-    }
-
-    protected function getRedirectUrl(): string
-    {
-        return $this->getResource()::getUrl('index');
     }
 }

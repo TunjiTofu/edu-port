@@ -17,7 +17,6 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->foreignId('training_program_id')->constrained()->onDelete('cascade');
             $table->integer('order_index')->default(0);
-            $table->decimal('max_score', 3, 1)->default(10.0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();

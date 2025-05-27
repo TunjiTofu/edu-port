@@ -39,7 +39,12 @@ class SectionResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('training_program_id')
                             ->label('Training Program')
-                            ->relationship('trainingProgram', 'name')
+                            // ->relationship('trainingProgram', 'name')
+                            ->relationship(
+                                name: 'trainingProgram',
+                                titleAttribute: 'name',
+                                modifyQueryUsing: fn(Builder $query) => $query->where('is_active', true)
+                            )
                             ->required()
                             ->searchable()
                             ->preload()
@@ -48,7 +53,7 @@ class SectionResource extends Resource
                                 if ($state) {
                                     $program = TrainingProgram::find($state);
                                     $nextOrder = Section::where('training_program_id', $state)->max('order_index') + 1;
-                                    $set('order', $nextOrder);
+                                    $set('order_index', $nextOrder);
                                 }
                             }),
 
@@ -66,21 +71,11 @@ class SectionResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('order_index')
                             ->label('Section Order')
-                            ->numeric()
+                            // ->numeric()
                             ->required()
                             ->minValue(1)
+                            ->readonly()
                             ->helperText('Order in which this section appears in the program'),
-
-                        Forms\Components\TextInput::make('max_score')
-                            ->label('Maximum Score for Section')
-                            ->numeric()
-                            ->minValue(0)
-                            ->default(function (?Section $record) {
-                                // For existing records, use the database value
-                                // For new records, default to 10
-                                return $record?->max_score ?? 10;
-                            })
-                            ->helperText('Total maximum score for all tasks in this section'),
 
                         Forms\Components\Toggle::make('is_active')
                             ->default(true)
@@ -139,10 +134,6 @@ class SectionResource extends Resource
                     ->badge()
                     ->color('success'),
 
-                Tables\Columns\TextColumn::make('max_score')
-                    ->label('Max Score')
-                    ->alignCenter(),
-
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->label('Active'),
@@ -179,6 +170,8 @@ class SectionResource extends Resource
                             throw new Halt();
                         }
                     }),
+                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
+                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -222,13 +215,19 @@ class SectionResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ])
-            ->join('training_programs', 'training_programs.id', '=', 'sections.training_program_id')
-            ->orderBy('training_programs.name')
-            ->orderBy('order_index')
-            ->select('sections.*');
+            ]);
+
+        // Only apply the join and ordering for index queries
+        if (request()->routeIs('filament.admin.resources.sections.index')) {
+            $query->join('training_programs', 'training_programs.id', '=', 'sections.training_program_id')
+                ->orderBy('training_programs.name')
+                ->orderBy('order_index')
+                ->select('sections.*');
+        }
+
+        return $query;
     }
 }

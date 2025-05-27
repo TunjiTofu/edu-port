@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\SubmissionTypes;
 use App\Models\Submission;
 use App\Models\Task;
 use App\Models\User;
@@ -28,7 +29,7 @@ class SubmissionsTableSeeder extends Seeder
                     'file_type' => 'application/pdf',
                     'file_size' => 1024,
                     'content_text' => 'Sample submission content text',
-                    'status' => 'submitted',
+                    'status' => SubmissionTypes::PENDING_REVIEW->value,
                     'submitted_at' => now()
                 ]);
             }

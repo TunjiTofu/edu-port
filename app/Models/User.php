@@ -81,22 +81,22 @@ class User extends Authenticatable
 
     public function isStudent() : bool 
     {
-        return $this->role->name === RoleTypes::STUDENT;
+        return $this->role->name === RoleTypes::STUDENT->value;
     }
 
     public function isReviewer() : bool 
     {
-        return $this->role->name === RoleTypes::REVIEWER;
+        return $this->role->name === RoleTypes::REVIEWER->value;
     }
 
     public function isAdmin() : bool 
     {
-        return $this->role->name === RoleTypes::ADMIN;
+        return $this->role->name === RoleTypes::ADMIN->value;
     }
 
     public function isObserver() : bool 
     {
-        return $this->role->name === RoleTypes::OBSERVER;
+        return $this->role->name === RoleTypes::OBSERVER->value;
     }
 
     public function hasPermission(string $permission): bool

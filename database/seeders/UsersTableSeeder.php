@@ -2,7 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Enums\RoleTypes;
 use App\Models\District;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -32,7 +34,7 @@ class UsersTableSeeder extends Seeder
 
         // Other users
         $roles = [
-            ['role' => 2, 'count' => 3],  // Trainers
+            ['role' => 2, 'count' => 3],  // Reviewers
             ['role' => 3, 'count' => 2],  // Observers
             ['role' => 4, 'count' => 10], // Students
         ];
@@ -56,10 +58,10 @@ class UsersTableSeeder extends Seeder
     private function getRoleName($roleId): string
     {
         return match ($roleId) {
-            2 => 'Trainer',
-            3 => 'Observer',
-            4 => 'Student',
-            default => 'User'
+            2 => RoleTypes::REVIEWER->value,
+            3 => RoleTypes::OBSERVER->value,
+            4 => RoleTypes::STUDENT->value,
+            default => RoleTypes::STUDENT->value,
         };
     }
 

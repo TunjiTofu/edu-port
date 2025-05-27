@@ -194,7 +194,7 @@ class UserResource extends Resource
                 Tables\Actions\DeleteAction::make()
                     ->before(function (User $record) {
                         // Prevent deletion of last admin
-                        if ($record->role->name === RoleTypes::ADMIN && User::where('role_id', 1)->count() <= 1) {
+                        if ($record->role->name === RoleTypes::ADMIN->value && User::where('role_id', 1)->count() <= 1) {
                             Notification::make()
                                 ->title('Request Denied')
                                 ->body('You cannot delete the last admin user.')
