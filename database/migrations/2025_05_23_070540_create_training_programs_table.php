@@ -18,6 +18,10 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->date('start_date');
             $table->date('end_date');
+            $table->date('registration_deadline')->nullable();
+            $table->decimal('passing_score', 5, 2)->default(50.00);
+            $table->integer('max_students')->nullable();
+            $table->string('submission_format')->default('doc');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();

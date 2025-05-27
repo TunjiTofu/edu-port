@@ -21,21 +21,24 @@ class SectionsTableSeeder extends Seeder
                 'name' => 'Introduction',
                 'description' => 'Program introduction and overview',
                 'training_program_id' => $program->id,
-                'order_index' => 1
+                'order_index' => 1,
+                'max_score' => 6
             ]);
 
             Section::create([
                 'name' => 'Core Concepts',
                 'description' => 'Fundamental concepts and theories',
                 'training_program_id' => $program->id,
-                'order_index' => 2
+                'order_index' => 2,
+                'max_score' => 8.5
             ]);
 
             Section::create([
                 'name' => 'Practical Application',
                 'description' => 'Hands-on practice and implementation',
                 'training_program_id' => $program->id,
-                'order_index' => 3
+                'order_index' => 3,
+                'max_score' => 9
             ]);
         }
     }

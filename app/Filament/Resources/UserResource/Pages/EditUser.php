@@ -22,12 +22,4 @@ class EditUser extends EditRecord
     {
         return $this->getResource()::getUrl('index');
     }
-
-    // protected function afterSave(): void
-    // {
-    //     Notification::make()
-    //         ->title('User updated successfully')
-    //         ->success()
-    //         ->send();
-    // }
 }

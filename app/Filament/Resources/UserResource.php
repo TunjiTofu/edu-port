@@ -17,6 +17,7 @@ use Filament\Resources\Resource;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -166,6 +167,7 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                TrashedFilter::make(),
                 SelectFilter::make('role')
                     ->relationship('role', 'name'),
 
@@ -178,9 +180,9 @@ class UserResource extends Resource
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Active Status'),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
+            // ->actions([
+            //     Tables\Actions\EditAction::make(),
+            // ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
@@ -202,6 +204,8 @@ class UserResource extends Resource
                             throw new Halt();
                         }
                     }),
+                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
+                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -221,6 +225,22 @@ class UserResource extends Resource
                             }
                         }),
                 ]),
+                // Tables\Actions\ForceDeleteBulkAction::make()
+                //     ->before(function ($records) {
+                //         $adminCount = User::where('role_id', 1)->count();
+                //         $adminRecords = $records->where('role_id', '1')->count();
+                //         // Prevent deletion of all admins
+                //         if ($adminCount - $adminRecords < 1) {
+                //             Notification::make()
+                //                 ->title('Request Denied')
+                //                 ->body('You cannot delete all admin users.')
+                //                 ->danger()
+                //                 ->persistent()
+                //                 ->send();
+                //             throw new Halt();
+                //         }
+                //     }),
+                Tables\Actions\RestoreBulkAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
     }
@@ -244,7 +264,8 @@ class UserResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['district', 'church']);
+        return parent::getEloquentQuery()->with(['district', 'church'])->withoutGlobalScopes([
+            SoftDeletingScope::class,
+        ]);
     }
-    
 }
