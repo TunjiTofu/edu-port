@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Filament\Resources\SubmissionResource\Pages;
+namespace App\Filament\Resources\ChurchResource\Pages;
 
-use App\Filament\Resources\SubmissionResource;
+use App\Filament\Resources\ChurchResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
-class EditSubmission extends EditRecord
+class EditChurch extends EditRecord
 {
-    protected static string $resource = SubmissionResource::class;
+    protected static string $resource = ChurchResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -18,10 +18,5 @@ class EditSubmission extends EditRecord
             Actions\ForceDeleteAction::make(),
             Actions\RestoreAction::make(),
         ];
-    }
-
-    protected function getRedirectUrl(): string
-    {
-        return $this->getResource()::getUrl('index');
     }
 }

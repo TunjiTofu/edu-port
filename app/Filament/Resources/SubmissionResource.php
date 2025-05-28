@@ -505,6 +505,8 @@ class SubmissionResource extends Resource
                             'status' => SubmissionTypes::COMPLETED->value,
                         ]);
                     }),
+                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
+                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
