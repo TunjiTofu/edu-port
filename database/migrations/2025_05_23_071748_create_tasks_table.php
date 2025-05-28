@@ -17,7 +17,7 @@ return new class extends Migration
             $table->text('description');
             $table->text('instructions')->nullable();
             $table->foreignId('section_id')->constrained()->onDelete('cascade');
-            $table->decimal('max_score', 3, 1)->default(10.0);
+            $table->decimal('max_score', 4, 1)->default(10.0);
             $table->date('due_date')->nullable();
             $table->integer('order_index')->default(0);
             $table->boolean('is_active')->default(true);

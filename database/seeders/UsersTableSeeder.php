@@ -44,7 +44,7 @@ class UsersTableSeeder extends Seeder
                 $district = $districts->random();
                 User::create([
                     'name' => $this->getRoleName($role['role']) . ' ' . ($i + 1),
-                    'email' => strtolower($this->getRoleName($role['role'])) . $i . '@example.com',
+                    'email' => strtolower($this->getRoleName($role['role'])) . ($i + 1) . '@example.com',
                     'password' => Hash::make('password'),
                     'role_id' => $role['role'],
                     'church_id' => $district->churches->random()->id,

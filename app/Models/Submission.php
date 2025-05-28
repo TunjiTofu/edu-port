@@ -19,6 +19,8 @@ class Submission extends Model
      */
     protected $guarded = ['id'];
 
+    protected $with = ['review'];
+
     /**
      * The attributes that should be cast to native types.
      *

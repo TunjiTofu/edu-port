@@ -22,10 +22,14 @@ class ReviewsTableSeeder extends Seeder
             Review::create([
                 'submission_id' => $submission->id,
                 'reviewer_id' => $trainers->random()->id,
-                'score' => rand(60, 100),
+                'score' => rand(1, 10),
                 'comments' => 'Good work, but could use more detail.',
                 'is_completed' => true,
-                'reviewed_at' => now()
+                'reviewed_at' => now(),
+                'admin_override' => false,
+                'override_reason' => null,
+                'overridden_by' => null,
+                'overridden_at' => null,
             ]);
         }
     }

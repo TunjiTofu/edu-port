@@ -46,6 +46,8 @@ class Review extends Model
      */
     public function reviewer()
     {
-        return $this->belongsTo(User::class, 'reviewer_id');
+        return $this->belongsTo(User::class)->withDefault([
+            'name' => 'Not Assigned' // Default value if no reviewer
+        ]);
     }
 }
