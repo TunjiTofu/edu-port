@@ -2,10 +2,10 @@
 
 namespace App\Enums;
 
-class RoleTypes
+enum RoleTypes: string
 {
-    Const ADMIN = 'admin';
-    Const REVIEWER = 'reviewer';
-    Const STUDENT = 'student';
-    Const OBSERVER = 'observer';
+    case ADMIN = 'Admin';
+    case REVIEWER = 'Reviewer';
+    case STUDENT = 'Student';
+    case OBSERVER = 'Observer';
 }

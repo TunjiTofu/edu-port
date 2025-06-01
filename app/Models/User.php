@@ -7,13 +7,15 @@ namespace App\Models;
 use App\Enums\RoleTypes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -56,43 +58,49 @@ class User extends Authenticatable
         return $this->belongsTo(District::class);
     }
 
-    // public function submissions(): HasMany
-    // {
-    //     return $this->hasMany(Submission::class, 'student_id');
-    // }
+    public function church() : BelongsTo
+    {
+        return $this->belongsTo(Church::class);
+    }
 
-    // public function reviews(): HasMany
-    // {
-    //     return $this->hasMany(Review::class, 'reviewer_id');
-    // }
 
-    // public function enrollments(): HasMany
-    // {
-    //     return $this->hasMany(ProgramEnrollment::class, 'student_id');
-    // }
+    public function submissions(): HasMany
+    {
+        return $this->hasMany(Submission::class, 'student_id');
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class, 'reviewer_id');
+    }
+
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(ProgramEnrollment::class, 'student_id');
+    }
 
     public function isStudent() : bool 
     {
-        return $this->role->name === RoleTypes::STUDENT;
+        return $this->role->name === RoleTypes::STUDENT->value;
     }
 
     public function isReviewer() : bool 
     {
-        return $this->role->name === RoleTypes::REVIEWER;
+        return $this->role->name === RoleTypes::REVIEWER->value;
     }
 
     public function isAdmin() : bool 
     {
-        return $this->role->name === RoleTypes::ADMIN;
+        return $this->role->name === RoleTypes::ADMIN->value;
     }
 
     public function isObserver() : bool 
     {
-        return $this->role->name === RoleTypes::OBSERVER;
+        return $this->role->name === RoleTypes::OBSERVER->value;
     }
 
-    // public function hasPermission(string $permission): bool
-    // {
-    //     return $this->role->hasPermission($permission);
-    // }
+    public function hasPermission(string $permission): bool
+    {
+        return $this->role->hasPermission($permission);
+    }
 }

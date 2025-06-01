@@ -4,10 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Submission extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -15,6 +18,8 @@ class Submission extends Model
      * @var array<string>
      */
     protected $guarded = ['id'];
+
+    protected $with = ['review'];
 
     /**
      * The attributes that should be cast to native types.
@@ -48,5 +53,18 @@ class Submission extends Model
         return $this->belongsTo(User::class, 'student_id');
     }
 
-    
+    public function review(): HasOne
+    {
+        return $this->hasOne(Review::class);
+    }
+
+    public function similarityChecks(): HasMany
+    {
+        return $this->hasMany(SimilarityCheck::class, 'submission_1_id');
+    }
+
+    public function getFileUrl(): string
+    {
+        return asset('storage/' . $this->file_path);
+    }
 }

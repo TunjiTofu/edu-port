@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class TrainingProgram extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -36,7 +37,8 @@ class TrainingProgram extends Model
      *
      * @return HasMany
      */
-    public function sections(): HasMany {
+    public function sections(): HasMany
+    {
         return $this->hasMany(Section::class)->orderBy('order_index');
     }
 
@@ -51,4 +53,32 @@ class TrainingProgram extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Get the enrollments associated with the training program.
+     *
+     * @return HasMany
+     */
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(ProgramEnrollment::class);
+    }
+
+    public function getDurationWeeksAttribute(): string
+    {
+        if (!$this->start_date || !$this->end_date) {
+            return '0 weeks';
+        }
+
+        $days = $this->start_date->diffInDays($this->end_date);
+        $weeks = floor($days / 7);
+        $remainingDays = $days % 7;
+
+        $result = $weeks . ' week' . ($weeks != 1 ? 's' : '');
+
+        if ($remainingDays > 0) {
+            $result .= ' ' . $remainingDays . ' day' . ($remainingDays != 1 ? 's' : '');
+        }
+
+        return $result;
+    }
 }
