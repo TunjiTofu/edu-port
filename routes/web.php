@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SubmissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -24,5 +25,30 @@ Route::get('/check-auth', function() {
         'session' => session()->all()
     ];
 });
+
+// Submission routes
+Route::middleware('auth')->group(function () {
+    // Download submission file
+    Route::get('/submission/{submission}/download', [SubmissionController::class, 'download'])
+        ->name('submission.download');
+    
+    // View submission details (if you need a separate page)
+    Route::get('/submission/{submission}', [SubmissionController::class, 'show'])
+        ->name('submission.show');
+    
+    // Edit submission (if deadline hasn't passed)
+    Route::get('/submission/{submission}/edit', [SubmissionController::class, 'edit'])
+        ->name('submission.edit');
+    
+    // Update submission
+    Route::put('/submission/{submission}', [SubmissionController::class, 'update'])
+        ->name('submission.update');
+    
+    // Stream download for large files (alternative)
+    Route::get('/submission/{submission}/stream', [SubmissionController::class, 'streamDownload'])
+        ->name('submission.stream');
+});
+;
+
 
 require __DIR__.'/auth.php';

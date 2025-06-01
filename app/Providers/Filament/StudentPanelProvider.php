@@ -51,6 +51,17 @@ class StudentPanelProvider extends PanelProvider
                 EnsureUserIsStudent::class,
             ])
             ->brandName('Student Portal')
-            ->favicon(asset('favicon.ico'));
+            ->favicon(asset('favicon.ico'))
+            ->navigationGroups([
+                \Filament\Navigation\NavigationGroup::make('Learning')
+                    // ->icon('heroicon-o-academic-cap')
+                    ->collapsible(),
+                \Filament\Navigation\NavigationGroup::make('Submissions')
+                    // ->icon('heroicon-o-document-text')
+                    ->collapsible(),
+                \Filament\Navigation\NavigationGroup::make('Performance')
+                    // ->icon('heroicon-o-chart-bar')
+                    ->collapsible(),
+            ]);
     }
 }

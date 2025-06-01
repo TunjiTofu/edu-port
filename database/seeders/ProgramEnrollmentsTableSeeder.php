@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ProgramEnrollmentStatus;
 use App\Models\ProgramEnrollment;
 use App\Models\TrainingProgram;
 use App\Models\User;
@@ -22,7 +23,8 @@ class ProgramEnrollmentsTableSeeder extends Seeder
             ProgramEnrollment::create([
                 'student_id' => $student->id,
                 'training_program_id' => $programs->random()->id,
-                'enrolled_at' => now()
+                'enrolled_at' => now(),
+                'status' => ProgramEnrollmentStatus::ACTIVE->value
             ]);
         }
     }
