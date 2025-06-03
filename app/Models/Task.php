@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -28,9 +30,9 @@ class Task extends Model
     /**
      * Get the section that owns the task.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
-    public function section()
+    public function section(): BelongsTo
     {
         return $this->belongsTo(Section::class);
     }
@@ -38,9 +40,9 @@ class Task extends Model
     /**
      * Get the submissions for the task.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
-    public function submissions()
+    public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class)->orderBy('submitted_at', 'desc');
     }
@@ -55,6 +57,11 @@ class Task extends Model
         return $this->hasOne(ResultPublication::class);
     }
 
+    public function resultPublications(): HasMany
+    {
+        return $this->hasMany(ResultPublication::class);
+    }
+
     /**
      * check if results are published for the task
      *
@@ -62,6 +69,11 @@ class Task extends Model
      */
     public function isResultsPublished(): bool
     {
-        return $this->resultPublication?->is_published ?? false;
+        return $this->resultPublications()->where('is_published', true)->exists();
+    }
+
+    public function getPublishedResult()
+    {
+        return $this->resultPublications()->where('is_published', true)->first();
     }
 }

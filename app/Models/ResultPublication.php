@@ -32,7 +32,7 @@ class ResultPublication extends Model
     /**
      * Get the training program that owns the result publication.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function task(): BelongsTo
     {
@@ -42,11 +42,11 @@ class ResultPublication extends Model
     /**
      * Get the student that owns the result publication.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function publisher(): BelongsTo
     {
         return $this->belongsTo(User::class, 'published_by');
     }
-    
+
 }

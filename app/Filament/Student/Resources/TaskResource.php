@@ -33,7 +33,7 @@ class TaskResource extends Resource
     {
         return false;
     }
-    
+
     public static function canViewAny(): bool
     {
         return Auth::user()?->isStudent();
@@ -111,34 +111,34 @@ class TaskResource extends Resource
                     })
                     ->formatStateUsing(fn($state) => str($state)->title()),
 
-                Tables\Columns\TextColumn::make('submission_score')
-                    ->label('Score')
-                    ->getStateUsing(function ($record) {
-                        // Get the submission for current student
-                        $submission = $record->submissions
-                            ->where('student_id', Auth::user()->id)
-                            ->where('status', SubmissionTypes::COMPLETED->value)
-                            ->first();
-
-                        // Access score through the review relationship
-                        $score = $submission?->review?->score;
-
-                        return $score !== null
-                            ? round($score, 1) // Format to 1 decimal place
-                            : 'NG';
-                    })
-                    ->badge()
-                    ->color(function ($state) {
-                        if ($state === 'NG') return 'gray';
-
-                        $score = (float) str_replace('%', '', $state);
-
-                        return match (true) {
-                            $score >= 7.5 => 'success',
-                            $score >= 5 => 'warning',
-                            default => 'danger'
-                        };
-                    }),
+//                Tables\Columns\TextColumn::make('submission_score')
+//                    ->label('Score')
+//                    ->getStateUsing(function ($record) {
+//                        // Get the submission for current student
+//                        $submission = $record->submissions
+//                            ->where('student_id', Auth::user()->id)
+//                            ->where('status', SubmissionTypes::COMPLETED->value)
+//                            ->first();
+//
+//                        // Access score through the review relationship
+//                        $score = $submission?->review?->score;
+//
+//                        return $score !== null
+//                            ? round($score, 1) // Format to 1 decimal place
+//                            : 'NG';
+//                    })
+//                    ->badge()
+//                    ->color(function ($state) {
+//                        if ($state === 'NG') return 'gray';
+//
+//                        $score = (float) str_replace('%', '', $state);
+//
+//                        return match (true) {
+//                            $score >= 7.5 => 'success',
+//                            $score >= 5 => 'warning',
+//                            default => 'danger'
+//                        };
+//                    }),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
