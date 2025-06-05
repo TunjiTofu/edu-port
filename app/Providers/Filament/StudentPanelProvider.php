@@ -2,6 +2,9 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Student\Widgets\RecentSubmissionsWidget;
+use App\Filament\Student\Widgets\StudentProgressWidget;
+use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -34,7 +37,12 @@ class StudentPanelProvider extends PanelProvider
             ->pages([
                 Pages\Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Student/Widgets'), for: 'App\\Filament\\Student\\Widgets')
+//            ->discoverWidgets(in: app_path('Filament/Student/Widgets'), for: 'App\\Filament\\Student\\Widgets')
+            ->widgets([
+                StudentProgressWidget::class,
+                RecentSubmissionsWidget::class,
+                UpcomingDeadlinesWidget::class
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

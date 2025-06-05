@@ -43,7 +43,7 @@
                                             $borderColor = '#bbf7d0'; // success-200
                                             $performanceText = 'Excellent';
                                         } elseif ($scorePercentage >= 70) {
-                                            $textColor = '#2563eb'; // info-600
+                                            $textColor = '#4579ed'; // info-600
                                             $bgColor = '#3b82f6'; // info-500
                                             $lightBg = '#eff6ff'; // info-50
                                             $borderColor = '#bfdbfe'; // info-200

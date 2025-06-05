@@ -504,4 +504,19 @@ class TaskResource extends Resource
             'file_type' => Storage::disk('local')->mimeType($newPath),
         ];
     }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
+
+    public static function canView($record): bool
+    {
+        return false;
+    }
 }
