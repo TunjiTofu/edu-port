@@ -21,7 +21,7 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
             ->query(
                 Submission::query()
                     ->where('student_id', auth()->id())
-                    ->with(['task.section.trainingProgram', 'review']) // Add review relationship
+                    ->with(['task.section.trainingProgram', 'task.resultPublication','review']) // Add review relationship
                     ->latest('submitted_at')
                     ->limit(3)
             )
@@ -48,15 +48,45 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                     ->view('filament.student.widgets.submission-status-compact'),
 
                 // Updated score column to handle your review relationship
+//                Tables\Columns\TextColumn::make('review.score')
+//                    ->label('Score')
+//                    ->formatStateUsing(function ($state, $record) {
+//                        if ($record->task->resultPublication->is_published) {
+//                            return $state ?? 'Not Scored';
+//                        }
+//                        return 'Result Unpublished';
+//                    })
+//                    ->badge()
+//                    ->color(function ($state, $record) {
+//                        $maxScore = $record->task->max_score;
+//                        $score = $record->score;
+//                        $scorePercentage = ($score / $maxScore) * 100;
+//
+//                        if (!$scorePercentage) return 'gray';
+//                        if ($scorePercentage >= 75) return 'success';
+//                        if ($scorePercentage >= 50) return 'warning';
+//                        return 'danger';
+//                    }),
+
+
                 Tables\Columns\TextColumn::make('review.score')
                     ->label('Score')
-                    ->formatStateUsing(fn ($state) => $state ? $state . '%' : 'Pending')
+                    ->formatStateUsing(function ($state, $record) {
+                        // Check if results are published
+                        if ($record->task->resultPublication->is_published) {
+                            return $state ?? 'Not Scored'; // Handle null scores
+                        }
+                        return 'Result Unpublished';
+                    })
                     ->badge()
-                    ->color(function ($state) {
-                        if (!$state) return 'gray';
-                        if ($state >= 90) return 'success';
-                        if ($state >= 70) return 'warning';
-                        return 'danger';
+                    ->color(function ($state, $record) {
+                        $maxScore = $record->task->max_score;
+                        $score = $record->score;
+                        $scorePercentage = ($score / $maxScore) * 100;
+                        if (!$scorePercentage) return 'danger';
+                        if ($scorePercentage >= 75 && $record->task->resultPublication->is_published) return 'success';
+                        if ($scorePercentage >= 50 && $record->task->resultPublication->is_published) return 'warning';
+                        return 'gray';
                     }),
             ])
             ->actions([

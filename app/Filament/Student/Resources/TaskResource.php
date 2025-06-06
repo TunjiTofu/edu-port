@@ -354,7 +354,7 @@ class TaskResource extends Resource
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
                                 'submitted_at' => now(),
-                                'status' => SubmissionTypes::PENDING_REVIEW->value,
+                                'status' => SubmissionTypes::SUBMITTED->value,
                             ]);
 
                             Notification::make()

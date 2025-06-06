@@ -195,30 +195,35 @@ class SubmissionResource extends Resource
                         Forms\Components\Select::make('review_status')
                             ->label('Review Status')
                             ->options([
-                                'completed' => 'Mark as Completed',
-                                'needs_revision' => 'Needs Revision',
-                                'pending' => 'Keep as Pending'
+                                SubmissionTypes::COMPLETED->value => 'Mark as Completed',
+                                SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
+                                SubmissionTypes::UNDER_REVIEW->value => 'Still in Review'
                             ])
-                            ->default('pending')
+                            ->default(SubmissionTypes::UNDER_REVIEW->value )
                             ->reactive()
+                            ->required()
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state !== 'completed') {
-                                    $set('score', null);
+                                if ($state !== SubmissionTypes::COMPLETED->value) {
+                                    $set('score', 0.0);
                                 }
                             }),
 
-                        Forms\Components\TextInput::make('score')
+                        Forms\Components\TextInput::make('review.score')
                             ->label('Score')
+//                            ->formatStateUsing(function ($state, $record) {
+//                                dd($state);
+//                                return $record->score;
+//                            })
                             ->numeric()
                             ->minValue(0)
-                            ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 100)
-                            ->visible(fn (Forms\Get $get): bool => $get('review_status') === 'completed')
-                            ->required(fn (Forms\Get $get): bool => $get('review_status') === 'completed')
+                            ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 10)
+                            ->visible(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
+                            ->required(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
                             ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : ''),
 
                         Forms\Components\Textarea::make('comments')
                             ->label('Review Comments')
-                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), ['completed', 'needs_revision']))
+                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
                             ->rows(4)
                             ->helperText(function (Forms\Get $get) {
                                 return match($get('review_status')) {
@@ -232,7 +237,7 @@ class SubmissionResource extends Resource
                             ->label('Notify Student')
                             ->default(true)
                             ->helperText('Send email notification to student about the review')
-                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), ['completed', 'needs_revision'])),
+                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value])),
                     ])
                     ->columns(2),
 
@@ -358,10 +363,11 @@ class SubmissionResource extends Resource
                     ),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make()
-                    ->label('Review')
-                    ->icon('heroicon-m-eye'),
+                Tables\Actions\ViewAction::make()
+                    ->label('View & Review'),
+//                Tables\Actions\EditAction::make()
+//                    ->label('View & Review')
+//                    ->icon('heroicon-m-eye'),
                 Tables\Actions\Action::make('download')
                     ->label('Download')
                     ->icon('heroicon-m-arrow-down-tray')
