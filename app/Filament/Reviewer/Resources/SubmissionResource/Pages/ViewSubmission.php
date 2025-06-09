@@ -36,31 +36,6 @@ class ViewSubmission extends ViewRecord
                             ->label('Student ID'),
                         TextEntry::make('student.name')
                             ->label('Student Name'),
-
-                        TextEntry::make('student.id')
-                            ->label('Student ID')
-                            ->formatStateUsing(fn ($state) =>
-                            <<<HTML
-        <div class="flex flex-col">
-            <span class="text-xs text-gray-500">Student ID</span>
-            <span class="text-base font-medium text-primary-600">{$state}</span>
-        </div>
-        HTML
-                            )
-                            ->html(),
-
-                        TextEntry::make('student.name')
-//                            ->label('Student Name')
-                            ->formatStateUsing(fn ($state) =>
-                            <<<HTML
-        <div class="flex flex-col">
-            <span class="text-xs text-gray-500">Student Name</span>
-            <span class="text-base font-medium text-gray-900">{$state}</span>
-        </div>
-        HTML
-                            )
-                            ->html(),
-
                         TextEntry::make('student.email')
                             ->label('Student Email'),
                         TextEntry::make('student.district.name')
