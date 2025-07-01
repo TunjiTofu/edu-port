@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\RoleTypes;
 use Database\Factories\UserFactory;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -108,5 +109,10 @@ class User extends Authenticatable
     public function reviewsAsReviewer()
     {
         return $this->hasMany(Review::class, 'reviewer_id');
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $this->isAdmin() || $this->isReviewer() || $this->isObserver();
     }
 }
