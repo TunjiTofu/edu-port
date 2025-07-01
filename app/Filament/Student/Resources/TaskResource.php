@@ -204,9 +204,10 @@ class TaskResource extends Resource
                                         ->required()
                                         ->directory('submissions')
                                         ->preserveFilenames()
-                                        ->disk('local')
+                                        ->disk(config('filesystems.default'))
                                         ->storeFileNamesIn('original_file_name')
                                         ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 10MB.'),
+
 
                                     Forms\Components\Textarea::make('notes')
                                         ->label('Student Notes (Optional)')
@@ -415,11 +416,22 @@ class TaskResource extends Resource
                                     ->first();
                                 return $submission && $submission->file_path;
                             })
+//                            ->url(function ($record) {
+//                                $submission = $record->submissions()
+//                                    ->where('student_id', Auth::id())
+//                                    ->first();
+//                                return $submission ? route('submission.download', $submission->id) : null;
+//                            })
                             ->url(function ($record) {
                                 $submission = $record->submissions()
                                     ->where('student_id', Auth::id())
                                     ->first();
-                                return $submission ? route('submission.download', $submission->id) : null;
+                                if (!$submission) return null;
+                                return Storage::disk(config('filesystems.default'))
+                                    ->temporaryUrl(
+                                        $submission->file_path.'/'.$submission->file_name,
+                                        now()->addMinutes(30)
+                                    );
                             })
                             ->openUrlInNewTab(),
 
@@ -466,7 +478,46 @@ class TaskResource extends Resource
         ];
     }
 
-    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null)
+//    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null)
+//    {
+//        $sectionId = $record->section->id;
+//        $taskId = $record->id;
+//        $userId = Auth::id();
+//        $userName = str_replace(' ', '_', Auth::user()->name);
+//        $timestamp = now()->format('Y-m-d_H-i-s');
+//
+//        // Define file paths
+//        $tempPath = $data['file'];
+//        $finalDir = "submissions/{$sectionId}/{$taskId}";
+//        $originalName = str_replace(' ', '_', $data['original_file_name']);
+//        $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
+//        $newPath = "{$finalDir}/{$sanitizedName}";
+//
+//        // Ensure directory exists
+//        Storage::disk('public')->makeDirectory($finalDir);
+//
+//        // Move file from temp to permanent location
+//        if (!Storage::disk('public')->exists($tempPath)) {
+//            throw new \Exception("Uploaded file not found at: {$tempPath}");
+//        }
+//
+//        Storage::disk('public')->move($tempPath, $newPath);
+//
+//        // Delete old file on resubmit
+//        if ($isResubmit && $existingSubmission && Storage::exists($existingSubmission->file_path)) {
+//            Storage::delete($existingSubmission->file_path);
+//        }
+//
+//        // Return file details
+//        return [
+//            'file_name' => $sanitizedName,
+//            'file_path' => $finalDir,
+//            'file_size' => Storage::disk('public')->size($newPath),
+//            'file_type' => Storage::disk('public')->mimeType($newPath),
+//        ];
+//    }
+
+    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null): array
     {
         $sectionId = $record->section->id;
         $taskId = $record->id;
@@ -481,27 +532,36 @@ class TaskResource extends Resource
         $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
         $newPath = "{$finalDir}/{$sanitizedName}";
 
-        // Ensure directory exists
-        Storage::disk('public')->makeDirectory($finalDir);
+        // Ensure a directory exists (S3 doesn't need this, but we'll keep it for local compatibility)
+        if (config('filesystems.default') !== 's3') {
+            Storage::disk('public')->makeDirectory($finalDir);
+        }
 
-        // Move file from temp to permanent location
+        // Move a file from temp to a permanent location
         if (!Storage::disk('public')->exists($tempPath)) {
             throw new \Exception("Uploaded file not found at: {$tempPath}");
         }
 
-        Storage::disk('public')->move($tempPath, $newPath);
+        // For S3, we'll use putFileAs instead of move
+        if (config('filesystems.default') === 's3') {
+            $fileStream = Storage::disk('public')->readStream($tempPath);
+            Storage::disk('s3')->put($newPath, $fileStream);
+            Storage::disk('public')->delete($tempPath); // Clean up a temp file
+        } else {
+            Storage::disk('public')->move($tempPath, $newPath);
+        }
 
-        // Delete old file on resubmit
-        if ($isResubmit && $existingSubmission && Storage::exists($existingSubmission->file_path)) {
-            Storage::delete($existingSubmission->file_path);
+        // Delete an old file on resubmitting
+        if ($isResubmit && $existingSubmission) {
+            Storage::disk(config('filesystems.default'))->delete($existingSubmission->file_path);
         }
 
         // Return file details
         return [
             'file_name' => $sanitizedName,
             'file_path' => $finalDir,
-            'file_size' => Storage::disk('public')->size($newPath),
-            'file_type' => Storage::disk('public')->mimeType($newPath),
+            'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
+            'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath),
         ];
     }
 
