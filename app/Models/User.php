@@ -114,7 +114,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->isAdmin() || $this->isReviewer() || $this->isObserver();
+        return $this->isAdmin() || $this->isReviewer() || $this->isObserver() || $this->isStudent();
     }
 
     public function canAccessFilament(): bool
