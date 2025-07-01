@@ -24,19 +24,19 @@ class SectionsTableSeeder extends Seeder
                 'order_index' => 1
             ]);
 
-            Section::create([
-                'name' => 'Core Concepts',
-                'description' => 'Fundamental concepts and theories',
-                'training_program_id' => $program->id,
-                'order_index' => 2
-            ]);
-
-            Section::create([
-                'name' => 'Practical Application',
-                'description' => 'Hands-on practice and implementation',
-                'training_program_id' => $program->id,
-                'order_index' => 3
-            ]);
+//            Section::create([
+//                'name' => 'Core Concepts',
+//                'description' => 'Fundamental concepts and theories',
+//                'training_program_id' => $program->id,
+//                'order_index' => 2
+//            ]);
+//
+//            Section::create([
+//                'name' => 'Practical Application',
+//                'description' => 'Hands-on practice and implementation',
+//                'training_program_id' => $program->id,
+//                'order_index' => 3
+//            ]);
         }
     }
 }

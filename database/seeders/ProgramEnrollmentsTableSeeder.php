@@ -6,6 +6,7 @@ use App\Enums\ProgramEnrollmentStatus;
 use App\Models\ProgramEnrollment;
 use App\Models\TrainingProgram;
 use App\Models\User;
+use App\Services\Utility\Constants;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -16,7 +17,7 @@ class ProgramEnrollmentsTableSeeder extends Seeder
      */
     public function run(): void
     {
-        $students = User::where('role_id', 3)->get();
+        $students = User::where('role_id', Constants::STUDENT_ID)->get();
         $programs = TrainingProgram::all();
 
         foreach ($students as $student) {

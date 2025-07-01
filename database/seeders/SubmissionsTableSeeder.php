@@ -6,6 +6,7 @@ use App\Enums\SubmissionTypes;
 use App\Models\Submission;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\Utility\Constants;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -17,7 +18,7 @@ class SubmissionsTableSeeder extends Seeder
     public function run(): void
     {
         $tasks = Task::all();
-        $students = User::where('role_id', 4)->get();
+        $students = User::where('role_id', Constants::STUDENT_ID)->get();
 
         foreach ($tasks as $task) {
             foreach ($students->random(5) as $student) {
