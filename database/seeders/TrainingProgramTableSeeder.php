@@ -25,16 +25,16 @@ class TrainingProgramTableSeeder extends Seeder
             'is_active' => true
         ]);
 
-        TrainingProgram::create([
-            'name' => 'Technical Skills Bootcamp',
-            'code' => 'TSB-2024',
-            'description' => 'Intensive technical training program',
-            'start_date' => now()->addDays(14),
-            'end_date' => now()->addMonths(2),
-            'registration_deadline' => now()->addDays(7),
-            'passing_score' => 80,
-            'max_students' => null,
-            'is_active' => true
-        ]);
+//        TrainingProgram::create([
+//            'name' => 'Technical Skills Bootcamp',
+//            'code' => 'TSB-2024',
+//            'description' => 'Intensive technical training program',
+//            'start_date' => now()->addDays(14),
+//            'end_date' => now()->addMonths(2),
+//            'registration_deadline' => now()->addDays(7),
+//            'passing_score' => 80,
+//            'max_students' => null,
+//            'is_active' => true
+//        ]);
     }
 }

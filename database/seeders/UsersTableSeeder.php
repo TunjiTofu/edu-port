@@ -34,9 +34,9 @@ class UsersTableSeeder extends Seeder
 
         // Other users
         $roles = [
-            ['role' => 2, 'count' => 3],  // Reviewers
+            ['role' => 2, 'count' => 1],  // Reviewers
             ['role' => 3, 'count' => 2],  // Observers
-            ['role' => 4, 'count' => 10], // Students
+            ['role' => 4, 'count' => 3], // Students
         ];
 
         foreach ($roles as $role) {
