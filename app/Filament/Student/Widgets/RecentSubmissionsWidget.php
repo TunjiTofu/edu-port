@@ -73,7 +73,7 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                     ->label('Score')
                     ->formatStateUsing(function ($state, $record) {
                         // Check if results are published
-                        if ($record->task->resultPublication->is_published) {
+                        if ($record->task?->resultPublication?->is_published) {
                             return $state ?? 'Not Scored'; // Handle null scores
                         }
                         return 'Result Unpublished';
