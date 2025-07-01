@@ -251,7 +251,7 @@ class TaskResource extends Resource
                                 'student_id' => Auth::id(),
                                 'content_text' => null,
                                 'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'],
+                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
@@ -349,12 +349,12 @@ class TaskResource extends Resource
 
                             $existingSubmission->update([
                                 'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'],
+                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
                                 'submitted_at' => now(),
-                                'status' => SubmissionTypes::PENDING_REVIEW->value,
+                                'status' => SubmissionTypes::SUBMITTED->value,
                             ]);
 
                             Notification::make()
@@ -478,18 +478,18 @@ class TaskResource extends Resource
         $tempPath = $data['file'];
         $finalDir = "submissions/{$sectionId}/{$taskId}";
         $originalName = str_replace(' ', '_', $data['original_file_name']);
-        $sanitizedName = "{$userName} - {$timestamp} - {$originalName}";
+        $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
         $newPath = "{$finalDir}/{$sanitizedName}";
 
         // Ensure directory exists
-        Storage::disk('local')->makeDirectory($finalDir);
+        Storage::disk('public')->makeDirectory($finalDir);
 
         // Move file from temp to permanent location
-        if (!Storage::disk('local')->exists($tempPath)) {
+        if (!Storage::disk('public')->exists($tempPath)) {
             throw new \Exception("Uploaded file not found at: {$tempPath}");
         }
 
-        Storage::disk('local')->move($tempPath, $newPath);
+        Storage::disk('public')->move($tempPath, $newPath);
 
         // Delete old file on resubmit
         if ($isResubmit && $existingSubmission && Storage::exists($existingSubmission->file_path)) {
@@ -500,8 +500,23 @@ class TaskResource extends Resource
         return [
             'file_name' => $sanitizedName,
             'file_path' => $finalDir,
-            'file_size' => Storage::disk('local')->size($newPath),
-            'file_type' => Storage::disk('local')->mimeType($newPath),
+            'file_size' => Storage::disk('public')->size($newPath),
+            'file_type' => Storage::disk('public')->mimeType($newPath),
         ];
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
+
+    public static function canView($record): bool
+    {
+        return false;
     }
 }

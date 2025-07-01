@@ -1,17 +1,16 @@
 <?php
 
-namespace App\Filament\Resources;
+namespace App\Filament\Observer\Resources;
 
-use App\Enums\RoleTypes;
 use App\Enums\SubmissionTypes;
-use App\Filament\Resources\SubmissionResource\Pages;
-use App\Filament\Resources\SubmissionResource\RelationManagers;
-use App\Models\Review;
+use App\Filament\Observer\Resources\SubmissionResource\Pages;
+use App\Filament\Observer\Resources\SubmissionResource\RelationManagers;
 use App\Models\Submission;
 use App\Models\User;
 use App\Services\Utility\Constants;
 use Carbon\Carbon;
 use Filament\Forms;
+use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -22,10 +21,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use Filament\Forms\Components\Section as FormSection;
-use Filament\Forms\Components\TextEntry;
-use Filament\Forms\Components\TextInput;
-use Filament\Infolists\Components\TextEntry as ComponentsTextEntry;
 
 class SubmissionResource extends Resource
 {
@@ -36,7 +31,7 @@ class SubmissionResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->isAdmin();
+        return Auth::user()?->isObserver();
     }
 
 
@@ -96,26 +91,6 @@ class SubmissionResource extends Resource
 
                 FormSection::make('Review Information')
                     ->schema([
-                        // Forms\Components\TextInput::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->disabled()
-                        //     ->formatStateUsing(function ($record) {
-                        //         return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     }),
-
-                        // Forms\Components\Select::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->relationship(
-                        //         name: 'review.reviewer',
-                        //         titleAttribute: 'name'
-                        //     )
-                        //     // ->formatStateUsing(function ($record) {
-                        //     //     return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     // })
-                        //     ->searchable()
-                        //     ->preload(),
-
-
 
                         // Status field (works for both)
                         Forms\Components\Select::make('status')
@@ -156,25 +131,6 @@ class SubmissionResource extends Resource
                             ->columnSpanFull(),
                     ])->columns(2),
 
-                // FormSection::make('Plagiarism Detection')
-                //     ->schema([
-                //         Forms\Components\TextInput::make('similarity_score')
-                //             ->label('Similarity Score (%)')
-                //             ->numeric()
-                //             ->disabled()
-                //             ->suffix('%'),
-
-                //         Forms\Components\Toggle::make('is_flagged')
-                //             ->label('Flagged for Plagiarism')
-                //             ->disabled(),
-
-                //         Forms\Components\Textarea::make('similarity_details')
-                //             ->label('Similarity Details')
-                //             ->rows(3)
-                //             ->disabled()
-                //             ->helperText('Details about similar submissions found'),
-                //     ])->columns(2),
-
                 FormSection::make('Timestamps')
                     ->schema([
                         Forms\Components\DateTimePicker::make('submitted_at')
@@ -187,46 +143,6 @@ class SubmissionResource extends Resource
                             ->disabled(),
                     ])->columns(2),
 
-                FormSection::make('Admin Override')
-                    ->schema([
-                        Forms\Components\Toggle::make('review.admin_override')
-                            ->label('Admin Override?')
-                            ->reactive()
-                            ->formatStateUsing(fn($record) => $record->review?->admin_override ?? false)
-                            ->helperText('Override the reviewer\'s decision')
-                            ->disabled(),
-
-                        Forms\Components\Select::make('review.overridden_by')
-                            ->label('Overridden By')
-                            ->options(User::where('role_id', Constants::ADMIN_ID)->pluck('name', 'id')) // Only admins
-                            ->default(Auth::user()->id)
-                            ->searchable()
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->overridden_by ?? Auth::user()->id)
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled(),
-
-                        Forms\Components\DateTimePicker::make('review.overridden_at')
-                            ->label('Override Date')
-                            // ->default(now())
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->overridden_at ? Carbon::parse($record->review->overridden_at)->format('Y-m-d H:i:s') : now()?->format('Y-m-d H:i:s'))
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled(),
-
-                        Forms\Components\Textarea::make('review.override_reason')
-                            ->label('Override Reason')
-                            ->rows(3)
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->override_reason ?? '')
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled()
-                            ->helperText('Explain why this override is necessary')
-                            ->columnSpanFull(),
-
-                    ])
-                    ->collapsible()
-                    ->columns(3)
             ]);
     }
 
@@ -239,11 +155,6 @@ class SubmissionResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight(FontWeight::Medium),
-
-                Tables\Columns\TextColumn::make('student.phone')
-                    ->label('Phone')
-                    ->searchable()
-                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('task.title')
                     ->label('Task')
@@ -326,7 +237,6 @@ class SubmissionResource extends Resource
             ])
 
             ->filters([
-                Tables\Filters\TrashedFilter::make(),
                 SelectFilter::make('status')
                     ->options([
                         SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
@@ -364,31 +274,6 @@ class SubmissionResource extends Resource
                     ->searchable()
                     ->preload(),
 
-                // Tables\Filters\Filter::make('similarity_score')
-                //     ->form([
-                //         Forms\Components\TextInput::make('min_similarity')
-                //             ->label('Minimum Similarity %')
-                //             ->numeric()
-                //             ->minValue(0)
-                //             ->maxValue(100),
-                //         Forms\Components\TextInput::make('max_similarity')
-                //             ->label('Maximum Similarity %')
-                //             ->numeric()
-                //             ->minValue(0)
-                //             ->maxValue(100),
-                //     ])
-                //     ->query(function (Builder $query, array $data): Builder {
-                //         return $query
-                //             ->when(
-                //                 $data['min_similarity'],
-                //                 fn(Builder $query, $value): Builder => $query->where('similarity_score', '>=', $value),
-                //             )
-                //             ->when(
-                //                 $data['max_similarity'],
-                //                 fn(Builder $query, $value): Builder => $query->where('similarity_score', '<=', $value),
-                //             );
-                //     }),
-
                 Tables\Filters\Filter::make('submitted_date')
                     ->form([
                         Forms\Components\DatePicker::make('submitted_from')
@@ -410,112 +295,7 @@ class SubmissionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Tables\Actions\Action::make('download')
-                    ->label('Download')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('primary')
-                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
-                    ->openUrlInNewTab(),
-                // ->visible(fn(Submission $record) => $record->file_path. '/' . $record->file_name && file_exists(public_path($record->file_path . '/' . $record->file_name))),
-
-                Tables\Actions\Action::make('assign_reviewer')
-                    ->label('Assign Reviewer')
-                    ->icon('heroicon-o-user-plus')
-                    ->color('warning')
-                    ->form([
-                        Forms\Components\Select::make('review.reviewer_id')
-                            ->label('Select Reviewer')
-                            ->options(function (Submission $record) {
-                                return \App\Models\User::where('role_id', Constants::REVIEWER_ID)
-                                    ->where('is_active', true)
-                                    ->where('church_id', '!=', $record->student->church_id)
-                                    ->where('district_id', '!=', $record->student->district_id)
-                                    ->pluck('name', 'id');
-                            })
-                            ->required()
-                            ->searchable()
-                            ->preload(),
-                    ])
-                    ->action(function (Submission $record, array $data) {
-
-                        // Update the related Review
-                        $record->review()->updateOrCreate(
-                            ['submission_id' => $record->id],
-                            ['reviewer_id' => $data['review']['reviewer_id']]
-                        );
-
-                        // Update the Submission status
-                        $record->update([
-                            'status' => SubmissionTypes::UNDER_REVIEW->value,
-                        ]);
-
-                        Notification::make()
-                            ->title('Reviewer assigned successfully')
-                            ->success()
-                            ->send();
-                    })
-                    ->visible(function (Submission $record) {
-                        return !$record->reviewer_id &&
-                            $record->status === SubmissionTypes::PENDING_REVIEW->value;
-                    }),
-
-                Tables\Actions\Action::make('override_score')
-                    ->label('Override Score')
-                    ->icon('heroicon-o-pencil-square')
-                    ->color('danger')
-                    ->form([
-                        Forms\Components\TextInput::make('score')
-                            ->label('New Score')
-                            ->numeric()
-                            ->required()
-                            ->minValue(0)
-                            ->maxValue(10)
-                            ->default(function (?Submission $record) {
-                                return $record->review?->score ?? 10;
-                            })
-                            ->rules([
-                                'numeric',
-                                'min:0',
-                                'max:10',
-                            ]),
-                        Forms\Components\Textarea::make('override_reason')
-                            ->label('Override Reason')
-                            ->required()
-                            ->rows(3),
-                    ])
-                    ->action(function (Submission $record, array $data) {
-
-                        // Update the related Review
-                        $record->review()->updateOrCreate(
-                            ['submission_id' => $record->id],
-                            [
-                                'score' => $data['score'],
-                                'is_completed' => true,
-                                'admin_override' => true,
-                                'override_reason' => $data['override_reason'],
-                                'overridden_by' => Auth::user()->id,
-                                'overridden_at' => now()
-                            ],
-                        );
-
-                        // Update the Submission status
-                        $record->update([
-                            'status' => SubmissionTypes::COMPLETED->value,
-                        ]);
-                    }),
-                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
-                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                    // Tables\Actions\ForceDeleteBulkAction::make(),
-                    Tables\Actions\RestoreBulkAction::make(),
-                ]),
             ]);
-        // ->defaultSort('submitted_at', 'desc');
     }
 
     public static function getRelations(): array
@@ -529,9 +309,7 @@ class SubmissionResource extends Resource
     {
         return [
             'index' => Pages\ListSubmissions::route('/'),
-            'create' => Pages\CreateSubmission::route('/create'),
             'view' => Pages\ViewSubmission::route('/{record}'),
-            'edit' => Pages\EditSubmission::route('/{record}/edit'),
         ];
     }
 

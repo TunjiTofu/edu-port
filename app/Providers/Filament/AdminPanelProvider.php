@@ -2,6 +2,12 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Student\Widgets\RecentSubmissionsWidget;
+use App\Filament\Widgets\ChurchAnalyticsChart;
+use App\Filament\Widgets\ChurchStatsWidget;
+use App\Filament\Widgets\ReviewerPerformanceWidget;
+use App\Filament\Widgets\SubmissionAdminWidget;
+use App\Filament\Widgets\SubmissionChartWidget;
 use App\Http\Middleware\EnsureIsAdmin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -36,10 +42,14 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Pages\Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
+//            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                ChurchStatsWidget::class,
+                ChurchAnalyticsChart::class,
+                SubmissionAdminWidget::class,
+                SubmissionChartWidget::class,
+                ReviewerPerformanceWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

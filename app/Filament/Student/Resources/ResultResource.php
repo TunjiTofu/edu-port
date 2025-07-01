@@ -207,10 +207,19 @@ class ResultResource extends Resource
                                 TextEntry::make('review.score')
                                     ->label('Score')
                                     ->badge()
-                                    ->color(fn ($state, $record): string => match (true) {
-                                        $state >= 7.5 => 'success',
-                                        $state >= 5 => 'warning',
-                                        default => 'danger',
+//                                    ->color(fn ($state, $record): string => match (true) {
+//                                        $state >= 7.5 => 'success',
+//                                        $state >= 5 => 'warning',
+//                                        default => 'danger',
+//                                    })
+                                    ->color(function ($state, $record) {
+                                        $maxScore = $record->task->max_score;
+                                        $score = $record->score;
+                                        $scorePercentage = ($score / $maxScore) * 100;
+                                        if (!$scorePercentage) return 'danger';
+                                        if ($scorePercentage >= 75 && $record->task->resultPublication->is_published) return 'success';
+                                        if ($scorePercentage >= 50 && $record->task->resultPublication->is_published) return 'warning';
+                                        return 'gray';
                                     })
                                     ->formatStateUsing(fn ($state, $record) => $state . '/' . $record->task->max_score),
                                 TextEntry::make('review.reviewed_at')
@@ -221,9 +230,9 @@ class ResultResource extends Resource
                             ->label('Reviewer Comments')
                             ->columnSpanFull()
                             ->visible(fn ($record) => !empty($record->review?->comments)),
-                        TextEntry::make('review.reviewer.name')
-                            ->label('Reviewed By')
-                            ->visible(fn ($record) => !empty($record->review?->reviewer)),
+//                        TextEntry::make('review.reviewer.name')
+//                            ->label('Reviewed By')
+//                            ->visible(fn ($record) => !empty($record->review?->reviewer)),
                     ]),
             ]);
     }

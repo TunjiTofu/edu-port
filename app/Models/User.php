@@ -104,4 +104,9 @@ class User extends Authenticatable
     {
         return $this->role->hasPermission($permission);
     }
+
+    public function reviewsAsReviewer()
+    {
+        return $this->hasMany(Review::class, 'reviewer_id');
+    }
 }
