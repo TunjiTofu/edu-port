@@ -45,8 +45,92 @@ class ResultPublicationResource extends Resource
     {
         return $form
             ->schema([
-                //
-            ]);
+                Forms\Components\Section::make('Result Publication Details')
+                    ->schema([
+                        Forms\Components\Select::make('task_id')
+                            ->label('Task')
+                            ->relationship('task', 'title')
+                            ->searchable()
+                            ->preload()
+                            ->required()
+//                            ->createOptionForm([
+//                                Forms\Components\TextInput::make('title')
+//                                    ->required()
+//                                    ->maxLength(255),
+//                                Forms\Components\Textarea::make('description')
+//                                    ->maxLength(65535)
+//                                    ->columnSpanFull(),
+//                            ])
+                            ->helperText('Select the task for which you want to create a result publication.')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                // Check if a result publication already exists for this task
+                                if ($state) {
+                                    $existingPublication = ResultPublication::where('task_id', $state)->first();
+                                    if ($existingPublication) {
+                                        Notification::make()
+                                            ->title('Warning')
+                                            ->body('A result publication already exists for this task.')
+                                            ->warning()
+                                            ->send();
+                                    }
+                                }
+                            }),
+
+                        Forms\Components\Toggle::make('is_published')
+                            ->label('Publish Immediately')
+                            ->helperText('Toggle this to publish the result immediately upon creation.')
+                            ->default(false)
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                if ($state) {
+                                    $set('published_at', now());
+                                    $set('published_by', auth()->id());
+                                } else {
+                                    $set('published_at', null);
+                                    $set('published_by', null);
+                                }
+                            }),
+
+                        Forms\Components\Hidden::make('published_at')
+                            ->default(fn (Forms\Get $get) => $get('is_published') ? now() : null),
+
+                        Forms\Components\Hidden::make('published_by')
+                            ->default(fn (Forms\Get $get) => $get('is_published') ? auth()->id() : null),
+                    ])
+                    ->columnSpan(2),
+
+                Forms\Components\Section::make('Additional Information')
+                    ->schema([
+                        Forms\Components\Placeholder::make('task_info')
+                            ->label('Task Information')
+                            ->content(function (Forms\Get $get) {
+                                if (!$get('task_id')) {
+                                    return 'Select a task to view its details.';
+                                }
+
+                                $task = Task::find($get('task_id'));
+                                if (!$task) {
+                                    return 'Task not found.';
+                                }
+
+                                return "Title: {$task->title}\nDescription: " . str($task->description ?? 'No description')->limit(100);
+                            })
+                            ->visible(fn (Forms\Get $get) => $get('task_id')),
+
+                        Forms\Components\Placeholder::make('publication_status')
+                            ->label('Publication Status')
+                            ->content(function (Forms\Get $get) {
+                                if ($get('is_published')) {
+                                    return '✅ This result will be published and visible to students.';
+                                } else {
+                                    return '⏳ This result will be saved as draft and not visible to students.';
+                                }
+                            }),
+                    ])
+                    ->columnSpan(1),
+            ])
+            ->columns(3);
     }
 
     public static function table(Table $table): Table

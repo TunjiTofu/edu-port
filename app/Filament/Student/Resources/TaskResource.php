@@ -356,7 +356,7 @@ class TaskResource extends Resource
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
                                 'submitted_at' => now(),
-                                'status' => SubmissionTypes::SUBMITTED->value,
+                                'status' => SubmissionTypes::PENDING_REVIEW->value,
                             ]);
 
                             Notification::make()
@@ -675,7 +675,6 @@ class TaskResource extends Resource
     {
         try {
             $fullPath = $submission->file_path.'/'.$submission->file_name;
-//            $fullPath = $submission->file_path;
 
             // Check if file exists first
             if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {

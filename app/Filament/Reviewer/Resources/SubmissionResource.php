@@ -18,6 +18,7 @@ use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class SubmissionResource extends Resource
@@ -121,52 +122,25 @@ class SubmissionResource extends Resource
                                 return $record->task->max_score . ' points';
                             })
                             ->disabled(),
-//                            ->formatStateUsing(fn ($state) => $state . ' points'),
-//                        Forms\Components\FileUpload::make('file_path')
-//                            ->label('Submitted File')
-//                            ->disabled()
-//                            ->downloadable(),
-//
-//                        Forms\Components\FileUpload::make('file_path')
-//                            ->label('Submitted File')
-//                            ->disabled()
-//                            ->downloadable()
-//                            ->disk('public') // Make sure this matches your storage
-//                            ->directory('submissions') // Your storage directory
-//                            ->openable() // Allows viewing/downloading
-//                            ->preserveFilenames()
-//                            ->helperText('Click the file icon to download'),
-//                            ->getDownloadUrlUsing(function (Submission $record) {
-//                                $path = str_replace(' ', '%20', $record->file_path);
-//                                return Storage::disk('public')->url($path);
-//                            }),
-//                            ->url(fn ($record) => route('submission.download', $record)),
 
-                        Forms\Components\FileUpload::make('file_path')
-                            ->label('Submitted File')
-                            ->disabled()
-                            ->disk('public')
-                            ->directory('submissions')
-                            ->preserveFilenames()
-                            ->helperText('Click the download button (↓)')
-                            ->downloadable(),
+                        Forms\Components\Group::make([
+                            Forms\Components\TextInput::make('file_display')
+                                ->label('Submitted File')
+                                ->disabled()
+                                ->formatStateUsing(function ($record) {
+                                    return $record->file_path.'/'.$record->file_name;
+                                })
+                                ->helperText('Click the download button (↓)'),
 
-
-
-//                        Forms\Components\Group::make([
-//                            Forms\Components\TextInput::make('file_name')
-//                                ->label('File Name')
-//                                ->disabled(),
-//
-//                            Forms\Components\FileUpload::make('file_path')
-//                                ->label('File')
-//                                ->disabled()
-//                                ->downloadable()
-//                                ->disk('local')
-//                                ->directory('submissions') // Your base directory
-//                                ->preserveFilenames()
-//                                ->openable()
-//                        ])->columns(2),
+                            Forms\Components\Actions::make([
+                                Forms\Components\Actions\Action::make('download')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->url(function (Submission $record) {
+                                        return $record ? static::getDownloadUrl($record) : null;
+                                    })
+                                    ->openUrlInNewTab()
+                            ])->fullWidth()
+                        ]),
 
                         Forms\Components\Textarea::make('student_notes')
                             ->label('Student Notes')
@@ -381,9 +355,12 @@ class SubmissionResource extends Resource
 ////                        }
 //                        return Storage::url($record->file_path.'/'.$record->file_name);
 //                    })
-                    ->url(fn (Submission $record) => route('submission.download', $record))
+//                    ->url(fn (Submission $record) => route('submission.download', $record))
+                    ->url(function (Submission $record) {
+                        return $record ? static::getDownloadUrl($record) : null;
+                    })
                     ->openUrlInNewTab()
-                    ->hidden(fn (Submission $record): bool => !Storage::exists($record->file_path)),
+                    ->hidden(fn (Submission $record): bool => !Storage::exists($record->file_path.'/'.$record->file_name)),
 
 //                Tables\Actions\Action::make('download') // Changed from Action to Tables\Actions\Action
 //                ->label('Download')
@@ -443,4 +420,30 @@ class SubmissionResource extends Resource
 //    {
 //        return false; // Reviewers cannot delete submissions
 //    }
+
+    protected static function getDownloadUrl(Submission $submission): ?string
+    {
+        try {
+            $fullPath = $submission->file_path.'/'.$submission->file_name;
+
+            // Check if file exists first
+            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
+                Log::error("File not found at path: {$fullPath}");
+                return null;
+            }
+
+            // Generate temporary URL with proper expiration
+            return Storage::disk(config('filesystems.default'))
+                ->temporaryUrl(
+                    $fullPath,
+                    now()->addMinutes(30),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
+                    ]
+                );
+        } catch (\Exception $e) {
+            Log::error("Failed to generate download URL: ".$e->getMessage());
+            return null;
+        }
+    }
 }
