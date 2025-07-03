@@ -51,11 +51,11 @@ Route::middleware('auth')->group(function () {
 });
 
 Route::get('/download/submission/{submission}', function (Submission $submission) {
-    if (!Storage::disk('local')->exists($submission->file_path)) {
+    if (!Storage::disk(config('filesystems.default'))->exists($submission->file_path.'/'.$submission->file_name)) {
         abort(404, 'File not found');
     }
 
-    return Storage::disk('local')->download($submission->file_path, $submission->file_name);
+    return Storage::disk(config('filesystems.default'))->download($submission->file_path.'/'.$submission->file_name, $submission->file_name);
 })->name('submission.download')->middleware('auth');
 
 Route::get('/test-file', function() {

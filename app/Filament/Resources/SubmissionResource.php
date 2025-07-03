@@ -26,6 +26,8 @@ use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Components\TextEntry;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry as ComponentsTextEntry;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class SubmissionResource extends Resource
 {
@@ -416,7 +418,11 @@ class SubmissionResource extends Resource
                     ->label('Download')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('primary')
-                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
+                    ->url(function (Submission $record) {
+                        return $record ? static::getDownloadUrl($record) : null;
+                    })
+//                    ->openUrlInNewTab(),
+//                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
                     ->openUrlInNewTab(),
                 // ->visible(fn(Submission $record) => $record->file_path. '/' . $record->file_name && file_exists(public_path($record->file_path . '/' . $record->file_name))),
 
@@ -542,5 +548,31 @@ class SubmissionResource extends Resource
                 SoftDeletingScope::class,
             ])
             ->with(['student', 'task.section', 'review.reviewer']);
+    }
+
+    protected static function getDownloadUrl(Submission $submission): ?string
+    {
+        try {
+            $fullPath = $submission->file_path.'/'.$submission->file_name;
+
+            // Check if file exists first
+            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
+                Log::error("File not found at path: {$fullPath}");
+                return null;
+            }
+
+            // Generate temporary URL with proper expiration
+            return Storage::disk(config('filesystems.default'))
+                ->temporaryUrl(
+                    $fullPath,
+                    now()->addMinutes(30),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
+                    ]
+                );
+        } catch (\Exception $e) {
+            Log::error("Failed to generate download URL: ".$e->getMessage());
+            return null;
+        }
     }
 }

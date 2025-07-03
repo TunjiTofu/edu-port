@@ -84,8 +84,8 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                         $score = $record->score;
                         $scorePercentage = ($score / $maxScore) * 100;
                         if (!$scorePercentage) return 'danger';
-                        if ($scorePercentage >= 75 && $record->task->resultPublication->is_published) return 'success';
-                        if ($scorePercentage >= 50 && $record->task->resultPublication->is_published) return 'warning';
+                        if ($scorePercentage >= 75 && $record->task?->resultPublication?->is_published) return 'success';
+                        if ($scorePercentage >= 50 && $record->task?->resultPublication?->is_published) return 'warning';
                         return 'gray';
                     }),
             ])

@@ -253,7 +253,6 @@ class TaskResource extends Resource
                                 'student_id' => Auth::id(),
                                 'content_text' => null,
                                 'file_name' => $fileDetails['file_name'],
-//                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
                                 'file_path' => $fileDetails['file_path'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
@@ -352,12 +351,12 @@ class TaskResource extends Resource
 
                             $existingSubmission->update([
                                 'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
+                                'file_path' => $fileDetails['file_path'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
                                 'submitted_at' => now(),
-                                'status' => SubmissionTypes::SUBMITTED->value,
+                                'status' => SubmissionTypes::PENDING_REVIEW->value,
                             ]);
 
                             Notification::make()
@@ -572,12 +571,12 @@ class TaskResource extends Resource
     /**
      * @param $data
      * @param $record
-     * @param false $isResubmit
-     * @param $existingSubmission
+     * @param bool $isResubmit
+     * @param null $existingSubmission
      * @return array
      * @throws Exception
      */
-    public static function processSubmissionFile($data, $record, false $isResubmit = false, $existingSubmission = null): array
+    public static function processSubmissionFile($data, $record, bool $isResubmit = false, $existingSubmission = null): array
     {
         try {
             $sectionId = $record->section->id;
@@ -676,7 +675,6 @@ class TaskResource extends Resource
     {
         try {
             $fullPath = $submission->file_path.'/'.$submission->file_name;
-//            $fullPath = $submission->file_path;
 
             // Check if file exists first
             if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {

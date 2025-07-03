@@ -75,7 +75,14 @@ class ViewSubmission extends ViewRecord
                                 };
 
                                 try {
-                                    $fileSize = Storage::disk('local')->size($record->file_path);
+//                                    'final_exists' => Storage::disk(config('filesystems.default'))->exists($newPath),
+//                'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
+//                'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath)
+
+
+//                                    $fileSize = Storage::disk('local')->size($record->file_path);
+//                                    dd($record->file_path.'/'.$record->file_name);
+                                    $fileSize = Storage::disk(config('filesystems.default'))->size($record->file_path.'/'.$record->file_name);
                                     $formattedSize = $fileSize > 1024
                                         ? round($fileSize / 1024) . ' KB'
                                         : $fileSize . ' bytes';
@@ -87,7 +94,7 @@ class ViewSubmission extends ViewRecord
                             })
                             ->url(function (Submission $record) {
                                 try {
-                                    if (Storage::disk('local')->exists($record->file_path)) {
+                                    if (Storage::disk(config('filesystems.default'))->exists($record->file_path.'/'.$record->file_name)) {
                                         return route('submission.download', $record);
                                     }
                                     Notification::make()
