@@ -253,7 +253,6 @@ class TaskResource extends Resource
                                 'student_id' => Auth::id(),
                                 'content_text' => null,
                                 'file_name' => $fileDetails['file_name'],
-//                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
                                 'file_path' => $fileDetails['file_path'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
@@ -352,7 +351,7 @@ class TaskResource extends Resource
 
                             $existingSubmission->update([
                                 'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
+                                'file_path' => $fileDetails['file_path'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
@@ -572,12 +571,12 @@ class TaskResource extends Resource
     /**
      * @param $data
      * @param $record
-     * @param false $isResubmit
-     * @param $existingSubmission
+     * @param bool $isResubmit
+     * @param null $existingSubmission
      * @return array
      * @throws Exception
      */
-    public static function processSubmissionFile($data, $record, false $isResubmit = false, $existingSubmission = null): array
+    public static function processSubmissionFile($data, $record, bool $isResubmit = false, $existingSubmission = null): array
     {
         try {
             $sectionId = $record->section->id;
