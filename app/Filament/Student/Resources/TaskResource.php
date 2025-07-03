@@ -253,7 +253,8 @@ class TaskResource extends Resource
                                 'student_id' => Auth::id(),
                                 'content_text' => null,
                                 'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
+//                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
+                                'file_path' => $fileDetails['file_path'],
                                 'file_size' => $fileDetails['file_size'],
                                 'file_type' => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
@@ -410,16 +411,16 @@ class TaskResource extends Resource
                     ->label('View Submission')
                     ->icon('heroicon-o-eye')
                     ->color('info')
-//                    ->visible(fn($record) => $record->submissions()->where('student_id', Auth::id())->exists())
-                    ->visible(function ($record) {
-                        $submission = $record->submissions()
-                            ->where('student_id', Auth::id())
-                            ->first();
-
-                        return $submission &&
-                            $submission->file_path &&
-                            Storage::disk(config('filesystems.default'))->exists($submission->file_path);
-                    })
+                    ->visible(fn($record) => $record->submissions()->where('student_id', Auth::id())->exists())
+//                    ->visible(function ($record) {
+//                        $submission = $record->submissions()
+//                            ->where('student_id', Auth::id())
+//                            ->first();
+//
+//                        return $submission &&
+//                            $submission->file_path &&
+//                            Storage::disk(config('filesystems.default'))->exists($submission->file_path);
+//                    })
                     ->modalContent(function ($record) {
                         $submission = $record->submissions()
                             ->where('student_id', Auth::id())
@@ -436,8 +437,24 @@ class TaskResource extends Resource
                             ->label('Download File')
                             ->icon('heroicon-o-arrow-down-tray')
                             ->color('success')
-                            ->visible(fn($data) => !empty($data['downloadUrl']))
-                            ->url(fn($data) => $data['downloadUrl'])
+//                            ->visible(fn($data) => !empty($data['downloadUrl']))
+                            ->visible(function ($record) {
+                                $submission = $record->submissions()
+                                    ->where('student_id', Auth::id())
+                                    ->first();
+                                return $submission && $submission->file_path;
+                            })
+//                            ->url(fn($data) => $data['downloadUrl'])
+//                            ->url(function ($data) {
+//                                dd($data);
+////                                $data['downloadUrl']
+//                            })
+                            ->url(function ($record) {
+                                $submission = $record->submissions()
+                                    ->where('student_id', Auth::id())
+                                    ->first();
+                                return $submission ? static::getDownloadUrl($submission) : null;
+                            })
                             ->openUrlInNewTab(),
 //                    ])
 //                    ->modalActions([
@@ -566,7 +583,7 @@ class TaskResource extends Resource
             $sectionId = $record->section->id;
             $taskId = $record->id;
             $userId = Auth::id();
-            $userName = str_replace(' ', '_', Auth::user()->name);
+            $userName = strtolower(str_replace(' ', '_', Auth::user()->name));
             $timestamp = now()->format('Y-m-d_H-i-s');
 
             // Define file paths
@@ -580,6 +597,8 @@ class TaskResource extends Resource
             Log::info('Pre-upload file details', [
                 'temp_path' => $tempPath,
                 'new_path' => $newPath,
+                'directory' => $finalDir,
+                'sanitized_name' => $sanitizedName,
                 'disk' => config('filesystems.default'),
                 'temp_exists' => Storage::disk('public')->exists($tempPath), // Check temp file
                 'target_exists' => Storage::disk(config('filesystems.default'))->exists($newPath) // Check destination
@@ -624,6 +643,8 @@ class TaskResource extends Resource
             Log::info('Post-upload file details', [
                 'new_path' => $newPath,
                 'disk' => config('filesystems.default'),
+                'directory' => $finalDir,
+                'sanitized_name' => $sanitizedName,
                 'final_exists' => Storage::disk(config('filesystems.default'))->exists($newPath),
                 'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
                 'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath)
@@ -632,7 +653,7 @@ class TaskResource extends Resource
             // Return file details
             return [
                 'file_name' => $sanitizedName,
-                'file_path' => $newPath,
+                'file_path' => $finalDir,
                 'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
                 'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath),
             ];
@@ -655,6 +676,7 @@ class TaskResource extends Resource
     {
         try {
             $fullPath = $submission->file_path.'/'.$submission->file_name;
+//            $fullPath = $submission->file_path;
 
             // Check if file exists first
             if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
