@@ -8,6 +8,7 @@ use App\Filament\Student\Resources\TaskResource\RelationManagers;
 use App\Models\Submission;
 use App\Models\Task;
 use Carbon\Carbon;
+use Exception;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -267,7 +268,7 @@ class TaskResource extends Resource
                                 ->send();
 
                             return ['refresh' => true, 'close' => true];
-                        } catch (\Exception $e) {
+                        } catch (Exception $e) {
                             Notification::make()
                                 ->title('Submission Failed')
                                 ->body('Error: ' . $e->getMessage())
@@ -343,7 +344,7 @@ class TaskResource extends Resource
                             $existingSubmission = $record->submissions->where('student_id', $userId)->first();
 
                             if (!$existingSubmission) {
-                                throw new \Exception("No existing submission found");
+                                throw new Exception("No existing submission found");
                             }
 
                             $fileDetails = static::processSubmissionFile($data, $record, true, $existingSubmission);
@@ -365,7 +366,7 @@ class TaskResource extends Resource
                                 ->send();
 
                             return ['refresh' => true, 'close' => true];
-                        } catch (\Exception $e) {
+                        } catch (Exception $e) {
                             Notification::make()
                                 ->title('Resubmission Failed')
                                 ->body('Error: ' . $e->getMessage())
@@ -380,60 +381,94 @@ class TaskResource extends Resource
 
                 // View Submission Details Action
                 Tables\Actions\Action::make('view_submission')
+//                    ->label('View Submission')
+//                    ->icon('heroicon-o-eye')
+//                    ->color('info')
+//                    ->visible(function ($record) {
+//                        return $record->submissions()
+//                            ->where('student_id', Auth::id())
+//                            ->exists();
+//                    })
+//                    ->modalHeading(function ($record) {
+//                        $submission = $record->submissions()
+//                            ->where('student_id', Auth::id())
+//                            ->first();
+//                        return 'Submission Details';
+//                    })
+//                    ->modalContent(function ($record) {
+//                        $submission = $record->submissions()
+//                            ->where('student_id', Auth::id())
+//                            ->first();
+//
+//                        if (!$submission) {
+//                            return view('filament.student.view-submission.no-submission-found');
+//                        }
+//
+//                        return view('filament.student.view-submission.submission-details', compact('submission', 'record'));
+//                    })
+
                     ->label('View Submission')
                     ->icon('heroicon-o-eye')
                     ->color('info')
+//                    ->visible(fn($record) => $record->submissions()->where('student_id', Auth::id())->exists())
                     ->visible(function ($record) {
-                        return $record->submissions()
-                            ->where('student_id', Auth::id())
-                            ->exists();
-                    })
-                    ->modalHeading(function ($record) {
                         $submission = $record->submissions()
                             ->where('student_id', Auth::id())
                             ->first();
-                        return 'Submission Details';
+
+                        return $submission &&
+                            $submission->file_path &&
+                            Storage::disk(config('filesystems.default'))->exists($submission->file_path);
                     })
                     ->modalContent(function ($record) {
                         $submission = $record->submissions()
                             ->where('student_id', Auth::id())
                             ->first();
 
-                        if (!$submission) {
-                            return view('filament.student.view-submission.no-submission-found');
-                        }
-
-                        return view('filament.student.view-submission.submission-details', compact('submission', 'record'));
+                        return view('filament.student.view-submission.submission-details', [
+                            'submission' => $submission,
+                            'record' => $record,
+                            'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null
+                        ]);
                     })
                     ->modalActions([
                         \Filament\Actions\Action::make('download')
                             ->label('Download File')
                             ->icon('heroicon-o-arrow-down-tray')
                             ->color('success')
-                            ->visible(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                return $submission && $submission->file_path;
-                            })
+                            ->visible(fn($data) => !empty($data['downloadUrl']))
+                            ->url(fn($data) => $data['downloadUrl'])
+                            ->openUrlInNewTab(),
+//                    ])
+//                    ->modalActions([
+//                        \Filament\Actions\Action::make('download')
+//                            ->label('Download File')
+//                            ->icon('heroicon-o-arrow-down-tray')
+//                            ->color('success')
+//                            ->visible(function ($record) {
+//                                $submission = $record->submissions()
+//                                    ->where('student_id', Auth::id())
+//                                    ->first();
+//                                return $submission && $submission->file_path;
+//                            })
+////                            ->url(function ($record) {
+////                                $submission = $record->submissions()
+////                                    ->where('student_id', Auth::id())
+////                                    ->first();
+////                                return $submission ? route('submission.download', $submission->id) : null;
+////                            })
 //                            ->url(function ($record) {
 //                                $submission = $record->submissions()
 //                                    ->where('student_id', Auth::id())
 //                                    ->first();
-//                                return $submission ? route('submission.download', $submission->id) : null;
+//                                if (!$submission) return null;
+//                                return Storage::disk(config('filesystems.default'))
+//                                    ->temporaryUrl(
+//                                        $submission->file_path.'/'.$submission->file_name,
+//                                        now()->addMinutes(30)
+//                                    );
 //                            })
-                            ->url(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                if (!$submission) return null;
-                                return Storage::disk(config('filesystems.default'))
-                                    ->temporaryUrl(
-                                        $submission->file_path.'/'.$submission->file_name,
-                                        now()->addMinutes(30)
-                                    );
-                            })
-                            ->openUrlInNewTab(),
+//                            ->openUrlInNewTab(),
 
                         \Filament\Actions\Action::make('edit_submission')
                             ->label('Edit Submission')
@@ -517,52 +552,129 @@ class TaskResource extends Resource
 //        ];
 //    }
 
-    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null): array
+    /**
+     * @param $data
+     * @param $record
+     * @param false $isResubmit
+     * @param $existingSubmission
+     * @return array
+     * @throws Exception
+     */
+    public static function processSubmissionFile($data, $record, false $isResubmit = false, $existingSubmission = null): array
     {
-        $sectionId = $record->section->id;
-        $taskId = $record->id;
-        $userId = Auth::id();
-        $userName = str_replace(' ', '_', Auth::user()->name);
-        $timestamp = now()->format('Y-m-d_H-i-s');
+        try {
+            $sectionId = $record->section->id;
+            $taskId = $record->id;
+            $userId = Auth::id();
+            $userName = str_replace(' ', '_', Auth::user()->name);
+            $timestamp = now()->format('Y-m-d_H-i-s');
 
-        // Define file paths
-        $tempPath = $data['file'];
-        $finalDir = "submissions/{$sectionId}/{$taskId}";
-        $originalName = str_replace(' ', '_', $data['original_file_name']);
-        $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
-        $newPath = "{$finalDir}/{$sanitizedName}";
+            // Define file paths
+            $tempPath = $data['file'];
+            $finalDir = "submissions/{$sectionId}/{$taskId}";
+            $originalName = str_replace(' ', '_', $data['original_file_name']);
+            $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
+            $newPath = "{$finalDir}/{$sanitizedName}";
 
-        // Ensure a directory exists (S3 doesn't need this, but we'll keep it for local compatibility)
-        if (config('filesystems.default') !== 's3') {
-            Storage::disk('public')->makeDirectory($finalDir);
+            // Add FIRST logging point here
+            Log::info('Pre-upload file details', [
+                'temp_path' => $tempPath,
+                'new_path' => $newPath,
+                'disk' => config('filesystems.default'),
+                'temp_exists' => Storage::disk('public')->exists($tempPath), // Check temp file
+                'target_exists' => Storage::disk(config('filesystems.default'))->exists($newPath) // Check destination
+            ]);
+
+            // Ensure a directory exists (S3 doesn't need this, but we'll keep it for local compatibility)
+            if (config('filesystems.default') !== 's3') {
+                Storage::disk('public')->makeDirectory($finalDir);
+            }
+
+            // Move a file from temp to a permanent location
+            if (!Storage::disk('public')->exists($tempPath)) {
+                throw new Exception("Uploaded file not found at: {$tempPath}");
+            }
+
+            // For S3, we'll use putFileAs instead of move
+//        if (config('filesystems.default') === 's3') {
+//            $fileStream = Storage::disk('public')->readStream($tempPath);
+//            Storage::disk('s3')->put($newPath, $fileStream);
+//            Storage::disk('public')->delete($tempPath); // Clean up a temp file
+//        } else {
+//            Storage::disk('public')->move($tempPath, $newPath);
+//        }
+
+            if (config('filesystems.default') === 's3') {
+                $fileStream = Storage::disk('public')->readStream($tempPath);
+                Storage::disk('s3')->put($newPath, $fileStream, [
+                    'Visibility' => 'private',
+                    'ContentType' => Storage::disk('public')->mimeType($tempPath)
+                ]);
+                Storage::disk('public')->delete($tempPath);
+            } else {
+                Storage::disk('public')->move($tempPath, $newPath);
+            }
+
+            // Delete an old file on resubmitting
+            if ($isResubmit && $existingSubmission) {
+                Storage::disk(config('filesystems.default'))->delete($existingSubmission->file_path);
+            }
+
+            // Add SECOND logging point here
+            Log::info('Post-upload file details', [
+                'new_path' => $newPath,
+                'disk' => config('filesystems.default'),
+                'final_exists' => Storage::disk(config('filesystems.default'))->exists($newPath),
+                'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
+                'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath)
+            ]);
+
+            // Return file details
+            return [
+                'file_name' => $sanitizedName,
+                'file_path' => $newPath,
+                'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
+                'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath),
+            ];
+        } catch (Exception $e) {
+            // Clean up any partial uploads
+            if (isset($newPath)) {
+                Storage::disk(config('filesystems.default'))->delete($newPath);
+            }
+            Log::error('File processing failed', [
+                'error' => $e->getMessage(),
+                'temp_path' => $tempPath ?? null,
+                'new_path' => $newPath ?? null,
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
         }
+    }
 
-        // Move a file from temp to a permanent location
-        if (!Storage::disk('public')->exists($tempPath)) {
-            throw new \Exception("Uploaded file not found at: {$tempPath}");
+    protected static function getDownloadUrl(Submission $submission): ?string
+    {
+        try {
+            $fullPath = $submission->file_path.'/'.$submission->file_name;
+
+            // Check if file exists first
+            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
+                Log::error("File not found at path: {$fullPath}");
+                return null;
+            }
+
+            // Generate temporary URL with proper expiration
+            return Storage::disk(config('filesystems.default'))
+                ->temporaryUrl(
+                    $fullPath,
+                    now()->addMinutes(30),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
+                    ]
+                );
+        } catch (Exception $e) {
+            Log::error("Failed to generate download URL: ".$e->getMessage());
+            return null;
         }
-
-        // For S3, we'll use putFileAs instead of move
-        if (config('filesystems.default') === 's3') {
-            $fileStream = Storage::disk('public')->readStream($tempPath);
-            Storage::disk('s3')->put($newPath, $fileStream);
-            Storage::disk('public')->delete($tempPath); // Clean up a temp file
-        } else {
-            Storage::disk('public')->move($tempPath, $newPath);
-        }
-
-        // Delete an old file on resubmitting
-        if ($isResubmit && $existingSubmission) {
-            Storage::disk(config('filesystems.default'))->delete($existingSubmission->file_path);
-        }
-
-        // Return file details
-        return [
-            'file_name' => $sanitizedName,
-            'file_path' => $finalDir,
-            'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
-            'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath),
-        ];
     }
 
     public static function canEdit($record): bool
