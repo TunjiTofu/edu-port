@@ -65,4 +65,4 @@ Route::get('/test-file', function() {
     return Storage::disk('public')->url('submissions/5/10/Student_1-2025-06-05_23-07-28-Project_Scoresheet_Dr._Adetunji.pdf');
 });
 
-require __DIR__.'/auth.php';
+//require __DIR__.'/auth.php';
