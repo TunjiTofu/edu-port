@@ -1,13 +1,16 @@
 <?php
 
+use App\Http\Controllers\LandingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SubmissionController;
 use App\Models\Submission;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+//Route::get('/', function () {
+//    return view('landing');
+//});
+
+Route::get('/', [LandingController::class, 'index']);
 
 Route::get('/dashboard', function () {
     return view('dashboard');

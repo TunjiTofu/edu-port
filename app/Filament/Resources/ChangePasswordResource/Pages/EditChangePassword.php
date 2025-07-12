@@ -93,13 +93,15 @@ class EditChangePassword extends EditRecord
 
         // If user changed their own password, redirect to dashboard
         if (Auth::id() === $this->record->id) {
-            $this->redirect(route('filament.admin.pages.dashboard'));
+            Auth::logout();
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
         }
     }
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        return route('filament.admin.auth.login');
     }
 }
 

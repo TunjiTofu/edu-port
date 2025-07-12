@@ -2,6 +2,7 @@
 
 namespace App\Filament\Student\Resources\ChangePasswordResource\Pages;
 
+use App\Filament\Resources\ChangePasswordResource;
 use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\Hash;
 
 class EditChangePassword extends EditRecord
 {
-    protected static string $resource = \App\Filament\Resources\ChangePasswordResource::class;
+    protected static string $resource = ChangePasswordResource::class;
 
     public function getTitle(): string
     {
@@ -74,13 +75,15 @@ class EditChangePassword extends EditRecord
 
         // If user changed their own password, redirect to dashboard
         if (Auth::id() === $this->record->id) {
-            $this->redirect(route('filament.student.pages.dashboard'));
+            Auth::logout();
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
         }
     }
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        return route('filament.student.auth.login');
     }
 }
 
