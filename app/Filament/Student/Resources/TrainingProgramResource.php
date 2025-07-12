@@ -21,7 +21,7 @@ class TrainingProgramResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
     protected static ?string $navigationLabel = 'My Programs';
     protected static ?string $navigationGroup = 'Learning';
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 3;
 
     public static function canViewAny(): bool
     {

@@ -2,12 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Student\Resources\ChangePasswordResource;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\UserMenuItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -70,6 +72,17 @@ class StudentPanelProvider extends PanelProvider
                 \Filament\Navigation\NavigationGroup::make('Performance')
                     // ->icon('heroicon-o-chart-bar')
                     ->collapsible(),
-            ]);
+                \Filament\Navigation\NavigationGroup::make('User Management')
+                    // ->icon('heroicon-o-chart-bar')
+                    ->collapsible(),
+            ])
+            ->userMenuItems([
+                'change-password' => UserMenuItem::make()
+                    ->label('Change Password')
+                    ->url(fn () => ChangePasswordResource::getUrl())
+                    ->icon('heroicon-o-key')
+                    ->sort(10),
+            ])
+            ->profile(isSimple: false);
     }
 }
