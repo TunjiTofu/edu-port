@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Reviewer\Resources\ChangePasswordResource;
 use App\Filament\Widgets\ChurchAnalyticsChart;
 use App\Filament\Widgets\ChurchStatsWidget;
 use App\Filament\Widgets\ReviewerPerformanceWidget;
@@ -10,6 +11,7 @@ use App\Filament\Widgets\SubmissionChartWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\UserMenuItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -65,6 +67,14 @@ class ObserverPanelProvider extends PanelProvider
                 EnsureUserIsObserver::class,
             ])
             ->brandName('Observer Portal')
-            ->favicon(asset('favicon.ico'));
+            ->favicon(asset('favicon.ico'))
+            ->userMenuItems([
+                'change-password' => UserMenuItem::make()
+                    ->label('Change Password')
+                    ->url(fn () => ChangePasswordResource::getUrl())
+                    ->icon('heroicon-o-key')
+                    ->sort(10),
+            ])
+            ->profile(isSimple: false);
     }
 }

@@ -1,13 +1,16 @@
 <?php
 
+use App\Http\Controllers\LandingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SubmissionController;
 use App\Models\Submission;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+//Route::get('/', function () {
+//    return view('landing');
+//});
+
+Route::get('/', [LandingController::class, 'index']);
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -62,4 +65,4 @@ Route::get('/test-file', function() {
     return Storage::disk('public')->url('submissions/5/10/Student_1-2025-06-05_23-07-28-Project_Scoresheet_Dr._Adetunji.pdf');
 });
 
-require __DIR__.'/auth.php';
+//require __DIR__.'/auth.php';

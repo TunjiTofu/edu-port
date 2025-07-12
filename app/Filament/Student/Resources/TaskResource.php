@@ -28,7 +28,7 @@ class TaskResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
     protected static ?string $navigationLabel = 'My Tasks';
     protected static ?string $navigationGroup = 'Submissions';
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     public static function canCreate(): bool
     {

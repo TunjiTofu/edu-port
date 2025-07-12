@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Resources\ChangePasswordResource;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Widgets\ChurchAnalyticsChart;
 use App\Filament\Widgets\ChurchStatsWidget;
@@ -24,6 +25,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Filament\Navigation\UserMenuItem;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -65,6 +67,31 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnsureIsAdmin::class,
-            ]);
+            ])
+            ->userMenuItems([
+//                'profile' => UserMenuItem::make()
+//                    ->label('Edit Profile')
+//                    ->url(fn () => route('filament.admin.pages.edit-profile'))
+//                    ->icon('heroicon-o-user-circle'),
+
+                'change-password' => UserMenuItem::make()
+                    ->label('Change Password')
+                    ->url(fn () => ChangePasswordResource::getUrl())
+                    ->icon('heroicon-o-key')
+                    ->sort(10),
+
+                // Add separator before logout
+//                'separator' => UserMenuItem::make()
+//                    ->label('')
+//                    ->url('')
+//                    ->sort(90),
+//
+//                'logout' => UserMenuItem::make()
+//                    ->label('Sign Out')
+//                    ->url(fn () => route('filament.admin.auth.logout'))
+//                    ->icon('heroicon-o-arrow-right-on-rectangle')
+//                    ->sort(100),
+            ])
+            ->profile(isSimple: false);
     }
 }

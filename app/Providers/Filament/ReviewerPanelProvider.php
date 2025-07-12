@@ -2,11 +2,13 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Reviewer\Resources\ChangePasswordResource;
 use App\Filament\Reviewer\Resources\Widgets\MyReviewsWidget;
 use App\Filament\Reviewer\Resources\Widgets\ReviewerStatsWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\UserMenuItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -59,6 +61,14 @@ class ReviewerPanelProvider extends PanelProvider
                 EnsureUserIsReviewer::class,
             ])
             ->brandName('Reviewer Portal')
-            ->favicon(asset('favicon.ico'));
+            ->favicon(asset('favicon.ico'))
+            ->userMenuItems([
+                'change-password' => UserMenuItem::make()
+                    ->label('Change Password')
+                    ->url(fn () => ChangePasswordResource::getUrl())
+                    ->icon('heroicon-o-key')
+                    ->sort(10),
+            ])
+            ->profile(isSimple: false);
     }
 }
