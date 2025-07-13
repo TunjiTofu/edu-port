@@ -6,7 +6,8 @@ use App\Filament\Resources\TaskResource\Pages;
 use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
 use Filament\Forms;
-use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Section as FormSection;
+use App\Models\Section;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -34,7 +35,7 @@ class TaskResource extends Resource
     {
         return $form
             ->schema([
-                Section::make('Task Information')
+                FormSection::make('Task Information')
                     ->schema([
                         Forms\Components\Select::make('section_id')
                             ->label('Section')
@@ -81,7 +82,7 @@ class TaskResource extends Resource
 
                     ])->columns(1),
 
-                Section::make('Task Settings')
+                FormSection::make('Task Settings')
                     ->schema([
 
                         Forms\Components\TextInput::make('order_index')
@@ -115,7 +116,7 @@ class TaskResource extends Resource
                             ->label('Active Status'),
                     ])->columns(3),
 
-                Section::make('Grading Instructions')
+                FormSection::make('Grading Instructions')
                     ->schema([
                         Forms\Components\RichEditor::make('instructions')
                             ->label('Grading Rubric')
@@ -278,22 +279,14 @@ class TaskResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['sectionOrderIndex', 'section.trainingProgram'])
+            ->with(['section.trainingProgram'])
             ->withCount('submissions')
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ])
-            ->orderBy(
-                Section::select('order_index')
-                    ->whereColumn('sections.id', 'tasks.section_id'),
-                'asc'
-            )
-            ->orderBy('order_index', 'asc');
-    }
-
-    public function sectionOrderIndex()
-    {
-        return $this->belongsTo(Section::class, 'section_id')
-            ->select('id', 'order_index');
+            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+            ->select('tasks.*', 'sections.order_index as section_order_index')
+            ->orderBy('sections.order_index', 'asc')
+            ->orderBy('tasks.order_index', 'asc');
     }
 }
