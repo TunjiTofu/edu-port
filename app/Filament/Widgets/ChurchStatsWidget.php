@@ -5,6 +5,8 @@ namespace App\Filament\Widgets;
 use App\Models\Church;
 use App\Models\District;
 use App\Models\Submission;
+use App\Models\Task;
+use App\Models\Section;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
@@ -61,6 +63,24 @@ class ChurchStatsWidget extends BaseWidget
             ? round((($currentPeriod - $previousPeriod) / $previousPeriod) * 100, 1)
             : ($currentPeriod > 0 ? 100 : 0);
 
+        // Get task statistics
+        $totalTasks = Task::count();
+        $activeTasks = Task::where('is_active', true)->count();
+        $inactiveTasks = Task::where('is_active', false)->count();
+
+        // Get overdue tasks (where due_date is past and task is active)
+        $overdueTasks = Task::where('is_active', true)
+            ->where('due_date', '<', now())
+            ->count();
+
+        // Get section statistics
+        $totalSections = Section::count();
+        $activeSections = Section::where('is_active', true)->count();
+        $inactiveSections = Section::where('is_active', false)->count();
+
+        // Get average tasks per section
+        $avgTasksPerSection = $totalSections > 0 ? round($totalTasks / $totalSections, 1) : 0;
+
         return [
             Stat::make('Total Churches', $totalChurches)
                 ->description('Churches in system')
@@ -100,6 +120,22 @@ class ChurchStatsWidget extends BaseWidget
                 ->descriptionIcon('heroicon-m-trophy')
                 ->color('warning')
                 ->chart([8, 12, 15, 18, 20, 22, 25, 28]),
+
+            Stat::make('Total Tasks', $totalTasks)
+                ->description("{$activeTasks} active, {$inactiveTasks} inactive")
+                ->descriptionIcon($overdueTasks > 0 ? 'heroicon-m-clock' : 'heroicon-m-clipboard-document-list')
+                ->color($overdueTasks > 0 ? 'warning' : 'success')
+                ->chart([5, 8, 12, 15, 18, 20, 22, 25])
+                ->extraAttributes([
+                    'title' => $overdueTasks > 0 ? "{$overdueTasks} overdue tasks" : 'All tasks up to date',
+                ]),
+
+            Stat::make('Total Sections', $totalSections)
+                ->description("{$activeSections} active, {$inactiveSections} inactive")
+                ->descriptionIcon('heroicon-m-squares-2x2')
+                ->color('info')
+                ->chart([3, 5, 7, 8, 10, 12, 14, 16]),
+
         ];
     }
 }

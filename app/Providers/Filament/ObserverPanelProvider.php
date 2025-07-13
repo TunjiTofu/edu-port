@@ -6,6 +6,7 @@ use App\Filament\Reviewer\Resources\ChangePasswordResource;
 use App\Filament\Widgets\ChurchAnalyticsChart;
 use App\Filament\Widgets\ChurchStatsWidget;
 use App\Filament\Widgets\ReviewerPerformanceWidget;
+use App\Filament\Widgets\StudentDistributionBarChart;
 use App\Filament\Widgets\SubmissionAdminWidget;
 use App\Filament\Widgets\SubmissionChartWidget;
 use Filament\Http\Middleware\Authenticate;
@@ -46,7 +47,7 @@ class ObserverPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
                 ChurchStatsWidget::class,
-                ChurchAnalyticsChart::class,
+                StudentDistributionBarChart::class,
                 SubmissionAdminWidget::class,
                 SubmissionChartWidget::class,
 //                ReviewerPerformanceWidget::class,
