@@ -277,13 +277,23 @@ class TaskResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['section.trainingProgram'])->withCount('submissions')
+        return parent::getEloquentQuery()
+            ->with(['sectionOrderIndex', 'section.trainingProgram'])
+            ->withCount('submissions')
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ])
-            ->join('sections', 'tasks.section_id', '=', 'sections.id')
-            ->orderBy('sections.order_index', 'asc')
-            ->orderBy('tasks.order_index', 'asc')
-            ->select('tasks.*');
+            ->orderBy(
+                Section::select('order_index')
+                    ->whereColumn('sections.id', 'tasks.section_id'),
+                'asc'
+            )
+            ->orderBy('order_index', 'asc');
+    }
+
+    public function sectionOrderIndex()
+    {
+        return $this->belongsTo(Section::class, 'section_id')
+            ->select('id', 'order_index');
     }
 }
