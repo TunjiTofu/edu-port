@@ -42,7 +42,7 @@ class TaskResource extends Resource
                             ->relationship(
                                 name: 'section',
                                 titleAttribute: 'name',
-                                modifyQueryUsing: fn(Builder $query) => $query->where('is_active', true)
+                                modifyQueryUsing: fn(Builder $query) => $query->where('is_active', true)->orderBy('order_index')
                             )
                             ->required()
                             ->searchable()
