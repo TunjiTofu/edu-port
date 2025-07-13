@@ -276,6 +276,20 @@ class TaskResource extends Resource
         ];
     }
 
+//    public static function getEloquentQuery(): Builder
+//    {
+//        return parent::getEloquentQuery()
+//            ->with(['section.trainingProgram'])
+//            ->withCount('submissions')
+//            ->withoutGlobalScopes([
+//                SoftDeletingScope::class,
+//            ])
+//            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+//            ->select('tasks.*', 'sections.order_index as section_order_index')
+//            ->orderBy('sections.order_index', 'asc')
+//            ->orderBy('tasks.order_index', 'asc');
+//    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -283,10 +297,6 @@ class TaskResource extends Resource
             ->withCount('submissions')
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ])
-            ->join('sections', 'tasks.section_id', '=', 'sections.id')
-            ->select('tasks.*', 'sections.order_index as section_order_index')
-            ->orderBy('sections.order_index', 'asc')
-            ->orderBy('tasks.order_index', 'asc');
+            ]);
     }
 }
