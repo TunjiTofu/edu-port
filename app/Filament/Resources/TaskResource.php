@@ -79,7 +79,7 @@ class TaskResource extends Resource
                             ]),
 
 
-                    ])->columns(2),
+                    ])->columns(1),
 
                 Section::make('Task Settings')
                     ->schema([
@@ -255,8 +255,7 @@ class TaskResource extends Resource
                     Tables\Actions\RestoreBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('section_id', 'asc')
-            ->defaultSort('order_index', 'asc');
+            ->defaultSort('sections.order_index');
     }
 
     public static function getRelations(): array
@@ -281,6 +280,10 @@ class TaskResource extends Resource
         return parent::getEloquentQuery()->with(['section.trainingProgram'])->withCount('submissions')
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ]);
+            ])
+            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+            ->orderBy('sections.order_index', 'asc')
+            ->orderBy('tasks.order_index', 'asc')
+            ->select('tasks.*');
     }
 }
