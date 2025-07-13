@@ -5,9 +5,9 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TaskResource\Pages;
 use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
+use App\Models\Section; // Add this import for your Section model
 use Filament\Forms;
-use Filament\Forms\Components\Section as FormSection;
-use App\Models\Section;
+use Filament\Forms\Components\Section as FormSection; // Alias the form component
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -256,7 +256,7 @@ class TaskResource extends Resource
                     Tables\Actions\RestoreBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('sections.order_index');
+            ->defaultSort('order_index');
     }
 
     public static function getRelations(): array
@@ -275,20 +275,6 @@ class TaskResource extends Resource
             'edit' => Pages\EditTask::route('/{record}/edit'),
         ];
     }
-
-//    public static function getEloquentQuery(): Builder
-//    {
-//        return parent::getEloquentQuery()
-//            ->with(['section.trainingProgram'])
-//            ->withCount('submissions')
-//            ->withoutGlobalScopes([
-//                SoftDeletingScope::class,
-//            ])
-//            ->join('sections', 'tasks.section_id', '=', 'sections.id')
-//            ->select('tasks.*', 'sections.order_index as section_order_index')
-//            ->orderBy('sections.order_index', 'asc')
-//            ->orderBy('tasks.order_index', 'asc');
-//    }
 
     public static function getEloquentQuery(): Builder
     {
