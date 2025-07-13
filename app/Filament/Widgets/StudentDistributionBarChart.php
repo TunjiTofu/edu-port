@@ -15,7 +15,7 @@ class StudentDistributionBarChart extends ChartWidget
     protected static ?string $maxHeight = '400px';
     protected static bool $isLazy = true;
 
-    public ?string $filter = 'church';
+    public ?string $filter = 'district';
 
     protected function getFilters(): ?array
     {
