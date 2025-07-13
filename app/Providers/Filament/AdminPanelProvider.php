@@ -7,6 +7,8 @@ use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Widgets\ChurchAnalyticsChart;
 use App\Filament\Widgets\ChurchStatsWidget;
 use App\Filament\Widgets\ReviewerPerformanceWidget;
+use App\Filament\Widgets\StudentDistributionBarChart;
+use App\Filament\Widgets\StudentDistributionChart;
 use App\Filament\Widgets\SubmissionAdminWidget;
 use App\Filament\Widgets\SubmissionChartWidget;
 use App\Http\Middleware\EnsureIsAdmin;
@@ -48,7 +50,9 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
                 ChurchStatsWidget::class,
-                ChurchAnalyticsChart::class,
+//                ChurchAnalyticsChart::class,
+                StudentDistributionChart::class,
+                StudentDistributionBarChart::class,
                 SubmissionAdminWidget::class,
                 SubmissionChartWidget::class,
                 ReviewerPerformanceWidget::class,
