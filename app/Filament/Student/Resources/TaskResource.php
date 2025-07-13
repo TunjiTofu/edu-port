@@ -9,6 +9,7 @@ use App\Models\Submission;
 use App\Models\Task;
 use Carbon\Carbon;
 use Exception;
+use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -17,7 +18,6 @@ use Filament\Tables;
 use Filament\Tables\Columns\ViewColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -43,6 +43,7 @@ class TaskResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
+            ->where('is_active', true)
             ->whereHas('section.trainingProgram.enrollments', function ($query) {
                 $query->where('student_id', Auth::user()->id)
                     ->where('status', 'active');
@@ -111,35 +112,6 @@ class TaskResource extends Resource
                         };
                     })
                     ->formatStateUsing(fn($state) => str($state)->title()),
-
-//                Tables\Columns\TextColumn::make('submission_score')
-//                    ->label('Score')
-//                    ->getStateUsing(function ($record) {
-//                        // Get the submission for current student
-//                        $submission = $record->submissions
-//                            ->where('student_id', Auth::user()->id)
-//                            ->where('status', SubmissionTypes::COMPLETED->value)
-//                            ->first();
-//
-//                        // Access score through the review relationship
-//                        $score = $submission?->review?->score;
-//
-//                        return $score !== null
-//                            ? round($score, 1) // Format to 1 decimal place
-//                            : 'NG';
-//                    })
-//                    ->badge()
-//                    ->color(function ($state) {
-//                        if ($state === 'NG') return 'gray';
-//
-//                        $score = (float) str_replace('%', '', $state);
-//
-//                        return match (true) {
-//                            $score >= 7.5 => 'success',
-//                            $score >= 5 => 'warning',
-//                            default => 'danger'
-//                        };
-//                    }),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -183,6 +155,52 @@ class TaskResource extends Resource
                     }),
             ])
             ->actions([
+                // View Task Action - Shows task details and submission options
+                Tables\Actions\Action::make('view_task')
+                    ->label('View Task')
+                    ->icon('heroicon-o-eye')
+                    ->color('primary')
+                    ->modalHeading('Task Details')
+                    ->modalWidth('7xl')
+                    ->modalContent(function ($record) {
+                        $submission = $record->submissions()
+                            ->where('student_id', Auth::id())
+                            ->first();
+
+                        return view('filament.student.task.task-details', [
+                            'task' => $record,
+                            'submission' => $submission,
+                            'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null,
+                            'hasSubmission' => (bool) $submission,
+//                            'canSubmit' => !$submission,
+//                            'canResubmit' => $submission && $submission->status !== SubmissionTypes::COMPLETED->value,
+                        ]);
+                    })
+                    ->modalActions([
+                        Action::make('download_submission')
+                            ->label('Download My Submission')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('success')
+                            ->visible(function ($record) {
+                                $submission = $record->submissions()
+                                    ->where('student_id', Auth::id())
+                                    ->first();
+                                return $submission && $submission->file_path;
+                            })
+                            ->url(function ($record) {
+                                $submission = $record->submissions()
+                                    ->where('student_id', Auth::id())
+                                    ->first();
+                                return $submission ? static::getDownloadUrl($submission) : null;
+                            })
+                            ->openUrlInNewTab(),
+
+                        Action::make('close')
+                            ->label('Close')
+                            ->color('gray')
+                            ->close()
+                    ]),
+
                 // Submit Action
                 Tables\Actions\Action::make('submit')
                     ->label('Submit')
@@ -374,52 +392,11 @@ class TaskResource extends Resource
                                 ->send();
                         }
                     }),
-                // View Action
-                // Tables\Actions\ViewAction::make()
-                //     ->label('View Details')
-                //     ->icon('heroicon-o-eye'),
-
-                // View Submission Details Action
                 Tables\Actions\Action::make('view_submission')
-//                    ->label('View Submission')
-//                    ->icon('heroicon-o-eye')
-//                    ->color('info')
-//                    ->visible(function ($record) {
-//                        return $record->submissions()
-//                            ->where('student_id', Auth::id())
-//                            ->exists();
-//                    })
-//                    ->modalHeading(function ($record) {
-//                        $submission = $record->submissions()
-//                            ->where('student_id', Auth::id())
-//                            ->first();
-//                        return 'Submission Details';
-//                    })
-//                    ->modalContent(function ($record) {
-//                        $submission = $record->submissions()
-//                            ->where('student_id', Auth::id())
-//                            ->first();
-//
-//                        if (!$submission) {
-//                            return view('filament.student.view-submission.no-submission-found');
-//                        }
-//
-//                        return view('filament.student.view-submission.submission-details', compact('submission', 'record'));
-//                    })
-
                     ->label('View Submission')
                     ->icon('heroicon-o-eye')
                     ->color('info')
                     ->visible(fn($record) => $record->submissions()->where('student_id', Auth::id())->exists())
-//                    ->visible(function ($record) {
-//                        $submission = $record->submissions()
-//                            ->where('student_id', Auth::id())
-//                            ->first();
-//
-//                        return $submission &&
-//                            $submission->file_path &&
-//                            Storage::disk(config('filesystems.default'))->exists($submission->file_path);
-//                    })
                     ->modalContent(function ($record) {
                         $submission = $record->submissions()
                             ->where('student_id', Auth::id())
@@ -432,22 +409,16 @@ class TaskResource extends Resource
                         ]);
                     })
                     ->modalActions([
-                        \Filament\Actions\Action::make('download')
+                        Action::make('download')
                             ->label('Download File')
                             ->icon('heroicon-o-arrow-down-tray')
                             ->color('success')
-//                            ->visible(fn($data) => !empty($data['downloadUrl']))
                             ->visible(function ($record) {
                                 $submission = $record->submissions()
                                     ->where('student_id', Auth::id())
                                     ->first();
                                 return $submission && $submission->file_path;
                             })
-//                            ->url(fn($data) => $data['downloadUrl'])
-//                            ->url(function ($data) {
-//                                dd($data);
-////                                $data['downloadUrl']
-//                            })
                             ->url(function ($record) {
                                 $submission = $record->submissions()
                                     ->where('student_id', Auth::id())
@@ -455,38 +426,8 @@ class TaskResource extends Resource
                                 return $submission ? static::getDownloadUrl($submission) : null;
                             })
                             ->openUrlInNewTab(),
-//                    ])
-//                    ->modalActions([
-//                        \Filament\Actions\Action::make('download')
-//                            ->label('Download File')
-//                            ->icon('heroicon-o-arrow-down-tray')
-//                            ->color('success')
-//                            ->visible(function ($record) {
-//                                $submission = $record->submissions()
-//                                    ->where('student_id', Auth::id())
-//                                    ->first();
-//                                return $submission && $submission->file_path;
-//                            })
-////                            ->url(function ($record) {
-////                                $submission = $record->submissions()
-////                                    ->where('student_id', Auth::id())
-////                                    ->first();
-////                                return $submission ? route('submission.download', $submission->id) : null;
-////                            })
-//                            ->url(function ($record) {
-//                                $submission = $record->submissions()
-//                                    ->where('student_id', Auth::id())
-//                                    ->first();
-//                                if (!$submission) return null;
-//                                return Storage::disk(config('filesystems.default'))
-//                                    ->temporaryUrl(
-//                                        $submission->file_path.'/'.$submission->file_name,
-//                                        now()->addMinutes(30)
-//                                    );
-//                            })
-//                            ->openUrlInNewTab(),
 
-                        \Filament\Actions\Action::make('edit_submission')
+                        Action::make('edit_submission')
                             ->label('Edit Submission')
                             ->icon('heroicon-o-pencil')
                             ->color('warning')
@@ -503,7 +444,7 @@ class TaskResource extends Resource
                                 return route('submission.edit', $record->id);
                             }),
 
-                        \Filament\Actions\Action::make('close')
+                        Action::make('close')
                             ->label('Close')
                             ->color('gray')
                             ->close(),
@@ -528,45 +469,6 @@ class TaskResource extends Resource
             'edit' => Pages\EditTask::route('/{record}/edit'),
         ];
     }
-
-//    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null)
-//    {
-//        $sectionId = $record->section->id;
-//        $taskId = $record->id;
-//        $userId = Auth::id();
-//        $userName = str_replace(' ', '_', Auth::user()->name);
-//        $timestamp = now()->format('Y-m-d_H-i-s');
-//
-//        // Define file paths
-//        $tempPath = $data['file'];
-//        $finalDir = "submissions/{$sectionId}/{$taskId}";
-//        $originalName = str_replace(' ', '_', $data['original_file_name']);
-//        $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
-//        $newPath = "{$finalDir}/{$sanitizedName}";
-//
-//        // Ensure directory exists
-//        Storage::disk('public')->makeDirectory($finalDir);
-//
-//        // Move file from temp to permanent location
-//        if (!Storage::disk('public')->exists($tempPath)) {
-//            throw new \Exception("Uploaded file not found at: {$tempPath}");
-//        }
-//
-//        Storage::disk('public')->move($tempPath, $newPath);
-//
-//        // Delete old file on resubmit
-//        if ($isResubmit && $existingSubmission && Storage::exists($existingSubmission->file_path)) {
-//            Storage::delete($existingSubmission->file_path);
-//        }
-//
-//        // Return file details
-//        return [
-//            'file_name' => $sanitizedName,
-//            'file_path' => $finalDir,
-//            'file_size' => Storage::disk('public')->size($newPath),
-//            'file_type' => Storage::disk('public')->mimeType($newPath),
-//        ];
-//    }
 
     /**
      * @param $data
