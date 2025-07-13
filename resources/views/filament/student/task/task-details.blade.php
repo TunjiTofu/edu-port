@@ -88,7 +88,7 @@
                         Description
                     </h3>
                     <div class="prose-content pt-2">
-                        {!! nl2br(e($task->description)) !!}
+                        {!! nl2br($task->description) !!}
                     </div>
                 </div>
             @endif
@@ -100,7 +100,7 @@
                         Instructions
                     </h3>
                     <div class="prose-content pt-2">
-                        {!! nl2br(e($task->instructions)) !!}
+                        {!! nl2br($task->instructions) !!}
                     </div>
                 </div>
             @endif
@@ -212,7 +212,7 @@
                             Your Notes
                         </h3>
                         <div class="text-sm text-gray-900 dark:text-gray-100 bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-md border-l-4 border-yellow-400">
-                            {!! nl2br(e($submission->student_notes)) !!}
+                            {!! nl2br($task->student_notes) !!}
                         </div>
                     </div>
                 @endif
@@ -224,7 +224,7 @@
                             Instructor Feedback
                         </h3>
                         <div class="text-sm text-gray-900 dark:text-gray-100 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-md border-l-4 border-blue-400">
-                            {!! nl2br(e($submission?->review?->comments)) !!}
+                            {!! nl2br($submission?->review?->comments) !!}
                         </div>
                     </div>
                 @endif
