@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ProgramEnrollmentStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -28,8 +29,11 @@ class TrainingProgram extends Model
     {
         return [
             'start_date' => 'date',
-            'end_date' => 'datetime',
+            'end_date' => 'date',
+            'registration_deadline' => 'date',
             'is_active' => 'boolean',
+            'max_students' => 'integer',
+            'passing_score' => 'decimal:2',
         ];
     }
 
@@ -81,4 +85,59 @@ class TrainingProgram extends Model
 
         return $result;
     }
+
+    /**
+     * Check if the enrollment is active.
+     *
+     * @return bool
+     */
+    public function isActive(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::ACTIVE;
+    }
+
+    /**
+     * Check if the enrollment is completed.
+     *
+     * @return bool
+     */
+    public function isCompleted(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::COMPLETED;
+    }
+
+    /**
+     * Check if the enrollment is paused.
+     *
+     * @return bool
+     */
+    public function isPaused(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::PAUSED;
+    }
+
+    /**
+     * Get the full image URL.
+     *
+     * @return string
+     */
+    public function getImageUrlAttribute(): string
+    {
+        if ($this->image && Storage::disk('public')->exists($this->image)) {
+            return Storage::disk('public')->url($this->image);
+        }
+
+        return asset('images/default-program.png');
+    }
+
+    /**
+     * Get the thumbnail image URL.
+     *
+     * @return string
+     */
+    public function getThumbnailAttribute(): string
+    {
+        return $this->image_url;
+    }
+
 }
