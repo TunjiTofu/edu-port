@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\ProgramEnrollmentStatus;
+use App\Helpers\TrainingProgramHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class TrainingProgram extends Model
 {
@@ -28,8 +31,11 @@ class TrainingProgram extends Model
     {
         return [
             'start_date' => 'date',
-            'end_date' => 'datetime',
+            'end_date' => 'date',
+            'registration_deadline' => 'date',
             'is_active' => 'boolean',
+            'max_students' => 'integer',
+            'passing_score' => 'decimal:2',
         ];
     }
 
@@ -80,5 +86,59 @@ class TrainingProgram extends Model
         }
 
         return $result;
+    }
+
+    /**
+     * Check if the enrollment is active.
+     *
+     * @return bool
+     */
+    public function isActive(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::ACTIVE;
+    }
+
+    /**
+     * Check if the enrollment is completed.
+     *
+     * @return bool
+     */
+    public function isCompleted(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::COMPLETED;
+    }
+
+    /**
+     * Check if the enrollment is paused.
+     *
+     * @return bool
+     */
+    public function isPaused(): bool
+    {
+        return $this->status === ProgramEnrollmentStatus::PAUSED;
+    }
+
+    public function getImageUrlAttribute()
+    {
+        if ($this->image) {
+            try {
+                if (config('filesystems.default') === 's3') {
+                    return Storage::disk('s3')->temporaryUrl(
+                        $this->image,
+                        now()->addHours(24)
+                    );
+                } else {
+                    return Storage::disk('public')->url($this->image);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to generate image URL', [
+                    'image_path' => $this->image,
+                    'error' => $e->getMessage()
+                ]);
+                return '/images/default-program.png';
+            }
+        }
+
+        return '/images/default-program.png'; // Default image path
     }
 }

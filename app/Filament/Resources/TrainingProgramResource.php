@@ -17,6 +17,8 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Forms\Components\FileUpload;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class TrainingProgramResource extends Resource
 {
@@ -47,6 +49,27 @@ class TrainingProgramResource extends Resource
                             ->unique(TrainingProgram::class, 'code', ignoreRecord: true)
                             ->maxLength(20)
                             ->alphaNum(),
+
+                        Forms\Components\FileUpload::make('image')
+                            ->label('Program Image')
+                            ->image()
+                            ->disk(config('filesystems.default'))
+                            ->directory('training-programs')
+                            ->visibility('private')
+                            ->imageEditor()
+                            ->imageEditorAspectRatios([
+                                '16:9',
+                                '4:3',
+                                '1:1',
+                            ])
+                            ->maxSize(2048) // 2MB max
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                            ->getUploadedFileNameForStorageUsing(
+                                fn (TemporaryUploadedFile $file): string =>
+                                    now()->format('Y-m-d_H-i-s') . '_' .
+                                    str_replace(' ', '_', strtolower($file->getClientOriginalName()))
+                            )
+                            ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('description')
                             ->rows(3)
@@ -137,6 +160,14 @@ class TrainingProgramResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\ImageColumn::make('image')
+                    ->label('Image')
+                    ->disk(config('filesystems.default'))
+                    ->visibility('private')
+                    ->circular()
+                    ->size(40)
+                    ->defaultImageUrl('/images/default-program.png'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable()

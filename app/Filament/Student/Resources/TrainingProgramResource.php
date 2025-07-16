@@ -6,20 +6,17 @@ use App\Enums\ProgramEnrollmentStatus;
 use App\Filament\Student\Resources\TrainingProgramResource\Pages;
 use App\Filament\Student\Resources\TrainingProgramResource\RelationManagers;
 use App\Models\TrainingProgram;
-use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 
 class TrainingProgramResource extends Resource
 {
     protected static ?string $model = TrainingProgram::class;
     protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
-    protected static ?string $navigationLabel = 'My Programs';
+    protected static ?string $navigationLabel = 'My Training Programs';
     protected static ?string $navigationGroup = 'Learning';
     protected static ?int $navigationSort = 3;
 
@@ -39,16 +36,18 @@ class TrainingProgramResource extends Resource
             }]);
     }
 
-
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\ImageColumn::make('thumbnail')
-                    ->label('Thumbnail')
+
+                Tables\Columns\ImageColumn::make('image')
+                    ->label('Image')
+                    ->disk(config('filesystems.default'))
+                    ->visibility('private')
                     ->circular()
                     ->size(60)
-                    ->defaultImageUrl(asset('images/default-program.png')),
+                    ->defaultImageUrl('/images/default-program.png'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Program Name')
@@ -110,16 +109,43 @@ class TrainingProgramResource extends Resource
             ->bulkActions([])
             ->emptyStateHeading('No Programs Enrolled')
             ->emptyStateDescription('You are not currently enrolled in any training programs.')
-            ->emptyStateIcon('heroicon-o-academic-cap');
+            ->emptyStateIcon('heroicon-o-academic-cap')
+            ->emptyStateActions([
+                Tables\Actions\Action::make('browse_programs')
+                    ->label('Browse Available Programs')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('primary')
+                    ->url(fn() => route('filament.student.resources.available-training-programs.index'))
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('enroll_new')
+                    ->label('Enroll in New Program')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('success')
+                    ->url(fn() => route('filament.student.resources.available-training-programs.index'))
+            ]);
     }
 
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getEloquentQuery()->count();
+    }
 
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'info';
+    }
 
     public static function getRelations(): array
     {
         return [
             //
         ];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
     }
 
     public static function getPages(): array

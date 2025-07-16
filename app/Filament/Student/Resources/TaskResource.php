@@ -613,4 +613,19 @@ class TaskResource extends Resource
     {
         return false;
     }
+
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getEloquentQuery()
+            ->whereDoesntHave('submissions', function ($query) {
+                $query->where('student_id', Auth::user()->id);
+            })
+            ->count();
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        $count = static::getNavigationBadge();
+        return $count > 0 ? 'danger' : null;
+    }
 }
