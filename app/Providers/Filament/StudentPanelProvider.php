@@ -60,7 +60,7 @@ class StudentPanelProvider extends PanelProvider
                 Authenticate::class,
                 EnsureUserIsStudent::class,
             ])
-            ->brandName('Student Portal')
+            ->brandName('Candidate Portal')
             ->favicon(asset('favicon.ico'))
             ->navigationGroups([
                 \Filament\Navigation\NavigationGroup::make('Learning')

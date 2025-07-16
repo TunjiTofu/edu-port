@@ -46,10 +46,11 @@ class AvailableTrainingProgramResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('image')
                     ->label('Image')
+                    ->disk(config('filesystems.default'))
+                    ->visibility('private')
                     ->circular()
                     ->size(60)
-                    ->disk('public')
-                    ->defaultImageUrl(asset('images/logo.png')),
+                    ->defaultImageUrl('/images/default-program.png'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Program Name')
@@ -201,6 +202,18 @@ class AvailableTrainingProgramResource extends Resource
             ->emptyStateDescription('There are no training programs available for enrollment at this time.')
             ->emptyStateIcon('heroicon-o-plus-circle');
     }
+
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getEloquentQuery()->count();
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        $count = static::getNavigationBadge();
+        return $count > 0 ? 'success' : null;
+    }
+
 
     public static function getRelations(): array
     {

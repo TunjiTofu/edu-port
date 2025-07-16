@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Enums\ProgramEnrollmentStatus;
+use App\Helpers\TrainingProgramHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class TrainingProgram extends Model
 {
@@ -116,28 +118,27 @@ class TrainingProgram extends Model
         return $this->status === ProgramEnrollmentStatus::PAUSED;
     }
 
-    /**
-     * Get the full image URL.
-     *
-     * @return string
-     */
-    public function getImageUrlAttribute(): string
+    public function getImageUrlAttribute()
     {
-        if ($this->image && Storage::disk('public')->exists($this->image)) {
-            return Storage::disk('public')->url($this->image);
+        if ($this->image) {
+            try {
+                if (config('filesystems.default') === 's3') {
+                    return Storage::disk('s3')->temporaryUrl(
+                        $this->image,
+                        now()->addHours(24)
+                    );
+                } else {
+                    return Storage::disk('public')->url($this->image);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to generate image URL', [
+                    'image_path' => $this->image,
+                    'error' => $e->getMessage()
+                ]);
+                return '/images/default-program.png';
+            }
         }
 
-        return asset('images/default-program.png');
+        return '/images/default-program.png'; // Default image path
     }
-
-    /**
-     * Get the thumbnail image URL.
-     *
-     * @return string
-     */
-    public function getThumbnailAttribute(): string
-    {
-        return $this->image_url;
-    }
-
 }

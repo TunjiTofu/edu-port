@@ -40,11 +40,14 @@ class TrainingProgramResource extends Resource
     {
         return $table
             ->columns([
+
                 Tables\Columns\ImageColumn::make('image')
-                    ->label('Thumbnail')
+                    ->label('Image')
+                    ->disk(config('filesystems.default'))
+                    ->visibility('private')
                     ->circular()
                     ->size(60)
-                    ->defaultImageUrl(asset('images/logo.png')),
+                    ->defaultImageUrl('/images/default-program.png'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Program Name')
@@ -121,6 +124,16 @@ class TrainingProgramResource extends Resource
                     ->color('success')
                     ->url(fn() => route('filament.student.resources.available-training-programs.index'))
             ]);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getEloquentQuery()->count();
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'info';
     }
 
     public static function getRelations(): array
