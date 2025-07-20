@@ -7,10 +7,8 @@ use App\Filament\Reviewer\Resources\SubmissionResource\Pages;
 use App\Models\ReviewModificationRequest;
 use App\Models\Submission;
 use App\Models\ModificationRequest;
-use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -18,9 +16,7 @@ use Filament\Tables\Table;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
@@ -34,6 +30,11 @@ class SubmissionResource extends Resource
     public static function canViewAny(): bool
     {
         return Auth::user()?->isReviewer();
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
     }
 
     public static function getEloquentQuery(): Builder
@@ -418,45 +419,28 @@ class SubmissionResource extends Resource
     {
         return $table
             ->columns([
+                // Primary information - always visible
                 Tables\Columns\TextColumn::make('student.name')
                     ->label('Student')
                     ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('student.id')
-                    ->label('Student ID')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('student.district.name')
-                    ->label('District')
-                    ->toggleable()
-                    ->sortable(),
+                    ->sortable()
+                    ->description(fn (Submission $record): string =>
+                        'District: ' . $record->student->district->name
+                    )
+                    ->wrap(),
+
                 Tables\Columns\TextColumn::make('task.title')
                     ->label('Task')
                     ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('task.section.name')
-                    ->label('Section')
-                    ->toggleable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
-                    ->label('Program')
-                    ->toggleable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('submission.status')
-                    ->label('Submission Status')
-                    ->getStateUsing(function (Submission $record) {
-                        return $record->status;
-                    })
-                    ->badge()
-                    ->colors([
-                        'gray' => SubmissionTypes::PENDING_REVIEW->value,
-                        'info' => SubmissionTypes::UNDER_REVIEW->value,
-                        'warning' => SubmissionTypes::NEEDS_REVISION->value,
-                        'success' => SubmissionTypes::COMPLETED->value,
-                        'danger' => SubmissionTypes::FLAGGED->value,
-                    ]),
+                    ->sortable()
+                    ->description(fn (Submission $record): string =>
+                        $record->task->section->name
+                    )
+                    ->wrap()
+                    ->limit(40),
 
-                Tables\Columns\TextColumn::make('review.is_completed')
+                // Combined status column for mobile efficiency
+                Tables\Columns\TextColumn::make('combined_status')
                     ->label('Review Status')
                     ->getStateUsing(function (Submission $record) {
                         $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
@@ -469,13 +453,12 @@ class SubmissionResource extends Resource
                             return 'In Progress';
                         }
 
-                        // Check modification request status
                         if ($review->hasApprovedModificationRequest()) {
-                            return 'Completed (Modifiable)';
+                            return 'Modifiable';
                         }
 
                         if ($review->hasPendingModificationRequest()) {
-                            return 'Completed (Mod. Pending)';
+                            return 'Mod. Pending';
                         }
 
                         return 'Completed';
@@ -485,9 +468,51 @@ class SubmissionResource extends Resource
                         'gray' => 'Not Started',
                         'warning' => 'In Progress',
                         'success' => 'Completed',
-                        'info' => 'Completed (Modifiable)',
-                        'primary' => 'Completed (Mod. Pending)',
-                    ]),
+                        'info' => 'Modifiable',
+                        'primary' => 'Mod. Pending',
+                    ])
+                    ->description(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        $score = $review && $review->score ? $review->score . '/' . $record->task->max_score : 'No score';
+                        return $score;
+                    }),
+
+                // Hide these columns by default on mobile - make them toggleable
+                Tables\Columns\TextColumn::make('student.id')
+                    ->label('Student ID')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('student.district.name')
+                    ->label('District')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('task.section.name')
+                    ->label('Section')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
+                    ->label('Program')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('submission.status')
+                    ->label('Submission Status')
+                    ->getStateUsing(function (Submission $record) {
+                        return $record->status;
+                    })
+                    ->badge()
+                    ->colors([
+                        'gray' => SubmissionTypes::PENDING_REVIEW->value,
+                        'info' => SubmissionTypes::UNDER_REVIEW->value,
+                        'warning' => SubmissionTypes::NEEDS_REVISION->value,
+                        'success' => SubmissionTypes::COMPLETED->value,
+                        'danger' => SubmissionTypes::FLAGGED->value,
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('score')
                     ->label('Score')
@@ -495,7 +520,8 @@ class SubmissionResource extends Resource
                         $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
                         return $review && $review->score ? $review->score . '/' . $record->task->max_score : '-';
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('reviewed_at')
                     ->label('Reviewed At')
@@ -504,8 +530,9 @@ class SubmissionResource extends Resource
                         return $review && $review->is_completed ? $review->updated_at : null;
                     })
                     ->dateTime()
+                    ->since() // Shows "2 hours ago" instead of full date
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('status')
@@ -585,7 +612,11 @@ class SubmissionResource extends Resource
             ->bulkActions([
                 // You can add bulk actions here if needed
             ])
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            // Add these mobile-friendly configurations
+            ->striped()
+            ->paginated([10, 25, 50])
+            ->defaultPaginationPageOption(10); // Smaller page sizes for mobile
     }
 
     /**
