@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\ReviewModificationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Review extends Model
@@ -80,4 +82,75 @@ class Review extends Model
         return $query->whereNotNull('score');
     }
 
+    public function modificationRequests(): HasMany
+    {
+        return $this->hasMany(ReviewModificationRequest::class);
+    }
+
+    public function hasApprovedModificationRequest(): bool
+    {
+        return $this->modificationRequests()
+            ->where('status', ReviewModificationStatus::APPROVED->value)
+            ->whereNull('used_at') // Only unused approvals
+            ->exists();
+    }
+
+    public function hasPendingModificationRequest(): bool
+    {
+        return $this->modificationRequests()
+            ->where('status', ReviewModificationStatus::PENDING->value)
+            ->exists();
+    }
+
+    public function latestModificationRequest(): ?ReviewModificationRequest
+    {
+        return $this->modificationRequests()
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * Get the currently active (unused) approved modification request
+     */
+    public function getActiveModificationRequest(): ?ReviewModificationRequest
+    {
+        return $this->modificationRequests()
+            ->where('status', ReviewModificationStatus::APPROVED->value)
+            ->whereNull('used_at')
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * Mark the approved modification request as used
+     */
+    public function consumeModificationRequest(): void
+    {
+        $activeRequest = $this->getActiveModificationRequest();
+        if ($activeRequest) {
+            $activeRequest->markAsUsed();
+        }
+    }
+
+    /**
+     * Check if the review can be modified
+     */
+    public function canBeModified(): bool
+    {
+        // If not completed, can always be modified
+        if (!$this->is_completed) {
+            return true;
+        }
+
+        // If completed, can only be modified if there's an unused approved request
+        return $this->hasApprovedModificationRequest();
+    }
+
+    /**
+     * Check if the review is locked (completed and no active modification request)
+     */
+    public function isLocked(): bool
+    {
+        return $this->is_completed && !$this->hasApprovedModificationRequest();
+    }
 }

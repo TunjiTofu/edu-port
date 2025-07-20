@@ -5,7 +5,10 @@ namespace App\Filament\Reviewer\Resources\SubmissionResource\Pages;
 use App\Enums\SubmissionTypes;
 use App\Filament\Reviewer\Resources\SubmissionResource;
 use App\Models\Review;
+use App\Models\ReviewModificationRequest;
 use Filament\Actions;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Enums\ActionSize;
@@ -25,6 +28,68 @@ class EditSubmission extends EditRecord
 
     protected function getFormActions(): array
     {
+        $review = $this->record->reviews()->where('reviewer_id', auth()->id())->first();
+
+        // Check if review is completed and user doesn't have approval to modify
+        if ($review && $review->is_completed && !$review->canBeModified()) {
+            return [
+                Actions\Action::make('request_modification')
+                    ->label('Request Review Modification')
+                    ->color('warning')
+                    ->icon('heroicon-m-pencil-square')
+                    ->size(ActionSize::Large)
+                    ->form([
+                        Section::make('Request Review Modification')
+                            ->description('This review has been marked as completed. Please provide a reason for why you need to modify this completed review.')
+                            ->schema([
+                                Textarea::make('reason')
+                                    ->label('Reason for Modification')
+                                    ->placeholder('Please explain why you need to modify this completed review...')
+                                    ->required()
+                                    ->rows(4)
+                                    ->helperText('This request will be sent to an administrator for approval.')
+                            ])
+                    ])
+                    ->action(function (array $data) use ($review) {
+                        // Check if there's already a pending request
+                        if ($review->hasPendingModificationRequest()) {
+                            Notification::make()
+                                ->title('Request Already Pending')
+                                ->body('You already have a pending modification request for this review. Please wait for admin approval.')
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
+                        ReviewModificationRequest::create([
+                            'review_id' => $review->id,
+                            'reviewer_id' => auth()->id(),
+                            'reason' => $data['reason'],
+                            'status' => 'pending',
+                        ]);
+
+                        Notification::make()
+                            ->title('Modification Request Submitted')
+                            ->body('Your request has been sent to an administrator for review. You will be notified when a decision is made.')
+                            ->success()
+                            ->send();
+
+                        return redirect($this->getResource()::getUrl('index'));
+                    })
+                    ->visible(fn () => !$review->hasPendingModificationRequest())
+                    ->modalWidth('md'),
+
+                // Show pending status if request exists
+                Actions\Action::make('pending_request')
+                    ->label('Modification Request Pending')
+                    ->color('gray')
+                    ->icon('heroicon-m-clock')
+                    ->size(ActionSize::Large)
+                    ->disabled()
+                    ->visible(fn () => $review->hasPendingModificationRequest())
+            ];
+        }
+
         return [
             // Save Changes button - for "Still in Review" status
             Actions\Action::make('save_changes')
@@ -60,7 +125,16 @@ class EditSubmission extends EditRecord
                 })
                 ->requiresConfirmation()
                 ->modalHeading('Confirm Review Completion')
-                ->modalDescription('Once you submit this review with "Completed" status, the score will be locked and cannot be changed. Are you sure you want to proceed?')
+                ->modalDescription(function () {
+                    $review = $this->record->reviews()->where('reviewer_id', auth()->id())->first();
+                    $isModification = $review && $review->is_completed && $review->hasApprovedModificationRequest();
+
+                    if ($isModification) {
+                        return 'You are about to save changes to this completed review. After saving, the review will be locked again and any future changes will require another admin approval. Are you sure you want to proceed?';
+                    }
+
+                    return 'Once you submit this review with "Completed" status, the score will be locked and cannot be changed without admin approval. Are you sure you want to proceed?';
+                })
                 ->modalSubmitActionLabel('Yes, Submit and Lock Score')
                 ->modalIcon('heroicon-o-lock-closed')
                 ->action(fn () => $this->save()),
@@ -105,11 +179,40 @@ class EditSubmission extends EditRecord
         return $data;
     }
 
+    protected function authorizeAccess(): void
+    {
+        parent::authorizeAccess();
+
+        $review = $this->record->reviews()->where('reviewer_id', auth()->id())->first();
+
+        // If review is completed and user doesn't have permission to modify, show restricted form
+        if ($review && $review->is_completed && !$review->canBeModified()) {
+            // We'll handle this in getFormActions instead of blocking access completely
+            return;
+        }
+    }
+
     protected function handleRecordUpdate($record, array $data): Model
     {
         try {
+            $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+
+            // Additional check before saving
+            if ($review && $review->is_completed && !$review->canBeModified()) {
+                Notification::make()
+                    ->title('Review Modification Not Allowed')
+                    ->body('This review has been completed and requires admin approval to modify.')
+                    ->danger()
+                    ->send();
+                $this->halt();
+            }
+
             $reviewStatus = $data['review_status'];
             $isCompleted = in_array($reviewStatus, [SubmissionTypes::COMPLETED->value]);
+
+            // Check if this is a modification of a completed review
+            $wasCompletedBefore = $review && $review->is_completed;
+            $hadApprovedModification = $review && $review->hasApprovedModificationRequest();
 
             // Create or update review
             $review = Review::updateOrCreate(
@@ -125,6 +228,18 @@ class EditSubmission extends EditRecord
                 ]
             );
 
+            // If this was a modification of a completed review with approved modification request,
+            // mark the modification request as used
+            if ($wasCompletedBefore && $hadApprovedModification && $isCompleted) {
+                $review->consumeModificationRequest();
+
+                Log::info('Review modification request consumed', [
+                    'review_id' => $review->id,
+                    'reviewer_id' => auth()->id(),
+                    'submission_id' => $record->id,
+                ]);
+            }
+
             // Update submission status
             $record->update([
                 'status' => $reviewStatus
@@ -137,7 +252,9 @@ class EditSubmission extends EditRecord
             }
 
             $successMessage = match ($reviewStatus) {
-                SubmissionTypes::COMPLETED->value => 'Review completed successfully. The score has been locked.',
+                SubmissionTypes::COMPLETED->value => $wasCompletedBefore && $hadApprovedModification
+                    ? 'Review modification completed successfully. The score is now locked again.'
+                    : 'Review completed successfully. The score has been locked.',
                 SubmissionTypes::NEEDS_REVISION->value => 'Review submitted successfully. Student has been notified about required revisions.',
                 default => 'Review saved successfully.'
             };
