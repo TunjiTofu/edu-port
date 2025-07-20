@@ -12,7 +12,6 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\Section;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\HtmlString as Html;
 
 class ViewSubmission extends ViewRecord
 {
@@ -148,7 +147,7 @@ class ViewSubmission extends ViewRecord
                 Section::make('Review Status')
                     ->schema([
                         TextEntry::make('reviews.0.is_completed')
-                            ->label('Status')
+                            ->label('Review Completed')
                             ->formatStateUsing(fn ($state, $record) =>
                             $record->reviews->isEmpty() ? 'Not reviewed' :
                                 ($state ? 'Yes' : 'No')
@@ -166,7 +165,7 @@ class ViewSubmission extends ViewRecord
                         TextEntry::make('reviews.0.reviewed_at')
                             ->label('Reviewed At')
                             ->dateTime()
-                            ->placeholder('Not reviewed yet'),
+                            ->placeholder('Not reviewed yet/Review Incomplete'),
                     ])
                     ->columns(2),
             ]);

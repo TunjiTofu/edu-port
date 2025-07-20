@@ -177,23 +177,34 @@ class SubmissionResource extends Resource
                             ->reactive()
                             ->required()
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state !== SubmissionTypes::COMPLETED->value) {
-                                    $set('score', 0.0);
+//                                if ($state !== SubmissionTypes::COMPLETED->value) {
+//                                    $set('score', 0.0);
+//                                }
+                                if ($state === SubmissionTypes::UNDER_REVIEW->value) {
+                                    $set('review.score', null);
                                 }
                             }),
 
                         Forms\Components\TextInput::make('review.score')
                             ->label('Score')
-//                            ->formatStateUsing(function ($state, $record) {
-//                                dd($state);
-//                                return $record->score;
-//                            })
+                            ->formatStateUsing(function ($state, $record) {
+                                return $record->score;
+                            })
                             ->numeric()
+                            ->inputMode('decimal')
+                            ->step('0.1')
                             ->minValue(0)
                             ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 10)
-                            ->visible(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
-                            ->required(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
-                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : ''),
+                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+                            ->validationMessages([
+                                'numeric' => 'The score must be a valid number.',
+                                'required' => 'Please provide a valid numeric score for this review.',
+                                'min' => 'The score cannot be negative.',
+                                'max' => 'The score cannot exceed the maximum allowed for this task.',
+                            ])
+                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : '')
+                            ->placeholder('Enter score (numbers only)'),
 
                         Forms\Components\Textarea::make('comments')
                             ->label('Review Comments')
