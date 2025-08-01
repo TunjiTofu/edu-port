@@ -126,24 +126,160 @@ class SubmissionResource extends Resource
                                 ->formatStateUsing(function ($record) {
                                     return $record->file_path.'/'.$record->file_name;
                                 })
-                                ->helperText('Click the download button (↓)'),
+                                ->helperText('Click the preview button (👁) to view the file content'),
+//                                ->helperText('Click the download button (↓)'),
 
                             Forms\Components\Actions::make([
-                                Forms\Components\Actions\Action::make('download')
-                                    ->icon('heroicon-o-arrow-down-tray')
-                                    ->url(function (Submission $record) {
-                                        return $record ? static::getDownloadUrl($record) : null;
-                                    })
-                                    ->openUrlInNewTab()
-                            ])->fullWidth()
-                        ]),
 
-                        Forms\Components\Textarea::make('student_notes')
-                            ->label('Student Notes')
-                            ->disabled()
-                            ->rows(3),
-                    ])
-                    ->columns(2),
+
+
+
+                                Forms\Components\Actions\Action::make('preview')
+                                    ->label('Preview File')
+                                    ->icon('heroicon-o-eye')
+                                    ->color('primary')
+                                    ->modalHeading('File Preview - Protected Content')
+                                    ->modalDescription('This content is protected from copying, printing, and downloading.')
+                                    ->modalContent(function (Submission $record) {
+                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+
+                                        if ($fileExtension === 'pdf') {
+                                            $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+
+                                            return new HtmlString('
+<div class="pdf-preview-container" style="
+    max-height: 70vh;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    position: relative;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+" oncontextmenu="return false;">
+    <!-- Header -->
+    <div style="
+        padding: 12px 16px;
+        background: #3b82f6;
+        color: white;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+        font-weight: 600;
+    ">
+        📄 ' . htmlspecialchars($record->file_name) . ' | 🔒 PROTECTED CONTENT
+    </div>
+
+    <!-- PDF Embed Container -->
+    <div style="height: calc(70vh - 100px); position: relative; background: white;">
+        <iframe
+            src="' . $pdfUrl . '"
+            style="width:100%;height:100%;border:none;"
+            sandbox="allow-same-origin"
+            title="Secure PDF Preview"
+        ></iframe>
+    </div>
+
+    <!-- Footer notice -->
+    <div style="
+        padding: 8px 16px;
+        background: #f3f4f6;
+        border-radius: 0 0 8px 8px;
+        font-size: 12px;
+        color: #6b7280;
+        text-align: center;
+        border-top: 1px solid #e5e7eb;
+    ">
+        🔒 Protected document - Copying content is disabled
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const container = document.querySelector(".pdf-preview-container");
+
+        // Disable right-click
+        container.addEventListener("contextmenu", e => e.preventDefault());
+
+        // Disable keyboard shortcuts
+        document.addEventListener("keydown", e => {
+            if (e.ctrlKey && (e.key === "c" || e.key === "s" || e.key === "p")) e.preventDefault();
+            if (e.key === "F12") e.preventDefault();
+        });
+
+        // Add additional security for iframe
+        const iframe = container.querySelector("iframe");
+        iframe.addEventListener("load", function() {
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+                // Disable text selection
+                iframeDoc.addEventListener("selectstart", e => e.preventDefault());
+
+                // Add watermark
+                const watermark = iframeDoc.createElement("div");
+                watermark.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    pointer-events: none;
+                    background: repeating-linear-gradient(
+                        45deg,
+                        transparent,
+                        transparent 100px,
+                        rgba(59, 130, 246, 0.03) 100px,
+                        rgba(59, 130, 246, 0.03) 200px
+                    );
+                    z-index: 1000;
+                `;
+                iframeDoc.body.appendChild(watermark);
+            } catch (e) {
+                console.log("Security restrictions prevent full protection");
+            }
+        });
+    });
+</script>
+            ');
+                                        }
+                                    })
+                                    ->modalWidth('7xl')
+                                    ->modalSubmitAction(false)
+                                    ->modalCancelActionLabel('Close')
+                                    ->closeModalByClickingAway(false),
+
+
+
+//
+//                                Forms\Components\Actions\Action::make('open_pdf')
+//                                    ->label('Open PDF')
+//                                    ->icon('heroicon-o-arrow-top-right-on-square')
+//                                    ->color('gray')
+//                                    ->url(function (Submission $record) {
+//                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//                                        if ($fileExtension === 'pdf') {
+//                                            return route('reviewer.submissions.file', ['submission' => $record]);
+//                                        }
+//                                        return null;
+//                                    })
+//                                    ->openUrlInNewTab()
+//                                    ->visible(function (Submission $record) {
+//                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//                                        return $fileExtension === 'pdf';
+//                                    })
+//                                    ->tooltip('Open PDF in new browser tab')
+
+
+
+                            ]),
+
+                            Forms\Components\Textarea::make('student_notes')
+                                ->label('Student Notes')
+                                ->disabled()
+                                ->rows(3),
+                        ])
+                            ->columns(2),
 
                 Forms\Components\Section::make('Similarity Check')
                     ->schema([
@@ -412,6 +548,7 @@ class SubmissionResource extends Resource
                             }),
                     ])
                     ->columns(2),
+            ])
             ]);
     }
 
@@ -651,4 +788,337 @@ class SubmissionResource extends Resource
             'edit' => Pages\EditSubmission::route('/{record}/edit'),
         ];
     }
+
+    /**
+     * Get file content for preview - Updated with PDF support
+     */
+//    protected static function getFileContent(Submission $record): ?string
+//    {
+//        if (!$record->file_path || !$record->file_name) {
+//            return null;
+//        }
+//
+//        $fullPath = $record->file_path . '/' . $record->file_name;
+//
+//        if (!Storage::exists($fullPath)) {
+//            return null;
+//        }
+//
+//        try {
+//            $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//
+//            // Handle different file types
+//            switch ($fileExtension) {
+//                case 'pdf':
+//                    // Option 1: Embed PDF using browser's native PDF viewer
+//                    return static::getPdfPreviewHtml($record, $fullPath);
+//
+//                case 'txt':
+//                case 'md':
+//                case 'php':
+//                case 'js':
+//                case 'html':
+//                case 'css':
+//                case 'json':
+//                case 'xml':
+//                case 'yml':
+//                case 'yaml':
+//                    // Text-based files - return as is
+//                    $content = Storage::get($fullPath);
+//                    return $content;
+//
+//                case 'doc':
+//                case 'docx':
+//                    return 'Word documents cannot be previewed in text format. Please use the download option.';
+//
+//                default:
+//                    $content = Storage::get($fullPath);
+//                    // Try to detect if it's text content
+//                    if (mb_check_encoding($content, 'UTF-8') && ctype_print(substr($content, 0, 1000))) {
+//                        return $content;
+//                    } else {
+//                        return 'Binary file cannot be previewed in text format. Please use the download option.';
+//                    }
+//            }
+//
+//        } catch (\Exception $e) {
+//            \Log::error('Error reading file for preview: ' . $e->getMessage(), [
+//                'file_path' => $fullPath,
+//                'submission_id' => $record->id
+//            ]);
+//
+//            return 'Error reading file content. Please try downloading the file instead.';
+//        }
+//    }
+
+
+
+    /**
+     * Get file content for preview - Updated with better PDF detection
+     */
+
+    protected static function getFileContent(Submission $record): ?string
+    {
+        if (!$record->file_path || !$record->file_name) {
+            \Log::warning('Missing file path or name', [
+                'submission_id' => $record->id,
+                'file_path' => $record->file_path,
+                'file_name' => $record->file_name
+            ]);
+            return 'Error: Missing file path or filename';
+        }
+
+        $fullPath = $record->file_path . '/' . $record->file_name;
+
+        \Log::info('Attempting to read file', [
+            'submission_id' => $record->id,
+            'full_path' => $fullPath,
+            'storage_disk' => config('filesystems.default'),
+            'file_exists' => Storage::exists($fullPath)
+        ]);
+
+        if (!Storage::exists($fullPath)) {
+            // Try alternative paths
+            $alternativePaths = [
+                $record->file_name,
+                'submissions/' . $record->file_name,
+                'uploads/' . $record->file_name,
+                'storage/app/' . $fullPath,
+            ];
+
+            foreach ($alternativePaths as $altPath) {
+                if (Storage::exists($altPath)) {
+                    \Log::info('Found file at alternative path', [
+                        'original_path' => $fullPath,
+                        'found_path' => $altPath
+                    ]);
+                    $fullPath = $altPath;
+                    break;
+                }
+            }
+
+            if (!Storage::exists($fullPath)) {
+                \Log::error('File not found anywhere', [
+                    'tried_paths' => array_merge([$fullPath], $alternativePaths)
+                ]);
+                return 'File not found at path: ' . $fullPath;
+            }
+        }
+
+        try {
+            $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+
+            if ($fileExtension === 'pdf') {
+                $content = Storage::get($fullPath);
+                $isPdf = substr($content, 0, 4) === '%PDF';
+
+                return $isPdf ?
+                    'PDF file detected (' . strlen($content) . ' bytes). Use PDF viewer.' :
+                    'File is not a valid PDF. First 20 chars: ' . substr($content, 0, 20);
+            }
+
+            // Handle other file types
+            switch ($fileExtension) {
+                case 'txt':
+                case 'md':
+                case 'php':
+                case 'js':
+                case 'html':
+                case 'css':
+                case 'json':
+                case 'xml':
+                    $content = Storage::get($fullPath);
+                    return strlen($content) > 500000 ?
+                        substr($content, 0, 500000) . "\n\n[File truncated - too large]" :
+                        $content;
+
+                default:
+                    $content = Storage::get($fullPath);
+                    $sample = substr($content, 0, 1000);
+
+                    if (mb_check_encoding($sample, 'UTF-8') && !preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $sample)) {
+                        return strlen($content) > 500000 ?
+                            substr($content, 0, 500000) . "\n\n[File truncated]" :
+                            $content;
+                    } else {
+                        return 'Binary file (' . strtoupper($fileExtension) . ') - ' . strlen($content) . ' bytes';
+                    }
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error reading file content', [
+                'file_path' => $fullPath,
+                'error' => $e->getMessage(),
+                'submission_id' => $record->id
+            ]);
+
+            return 'Error reading file: ' . $e->getMessage();
+        }
+    }
+
+    /**
+     * Generate HTML for PDF preview - Fixed for proper loading
+     */
+
+    protected static function getPdfPreviewHtml(Submission $record, string $fullPath): string
+    {
+        // Get secure route-based URL
+        $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+
+        return '
+<div class="pdf-preview-container" style="
+    max-height: 70vh;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    position: relative;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+" oncontextmenu="return false;">
+    <!-- Header -->
+    <div style="
+        padding: 12px 16px;
+        background: #3b82f6;
+        color: white;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+        font-weight: 600;
+    ">
+        📄 ' . htmlspecialchars($record->file_name) . ' | 🔒 PROTECTED CONTENT
+    </div>
+
+    <!-- PDF Embed Container -->
+    <div style="height: calc(70vh - 100px); position: relative; background: white;">
+        <div id="pdf-viewer" style="width:100%;height:100%;overflow:auto;position:relative"></div>
+        <div id="pdf-loading" style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #6b7280;
+            font-size: 14px;
+            z-index: 10;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        ">
+            <div style="text-align: center;">
+                <div style="margin-bottom: 10px; font-size: 24px;">📄</div>
+                <div>Loading PDF...</div>
+                <div style="margin-top: 8px; font-size: 12px; color: #9ca3af;">
+                    This may take a moment
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer notice -->
+    <div style="
+        padding: 8px 16px;
+        background: #f3f4f6;
+        border-radius: 0 0 8px 8px;
+        font-size: 12px;
+        color: #6b7280;
+        text-align: center;
+        border-top: 1px solid #e5e7eb;
+    ">
+        🔒 Protected document - Copying content is disabled
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const container = document.querySelector(".pdf-preview-container");
+    const viewer = document.getElementById("pdf-viewer");
+    const loading = document.getElementById("pdf-loading");
+
+    // Disable right-click
+    container.addEventListener("contextmenu", e => e.preventDefault());
+
+    // Disable keyboard shortcuts
+    document.addEventListener("keydown", e => {
+        if (e.ctrlKey && (e.key === "c" || e.key === "s" || e.key === "p")) e.preventDefault();
+        if (e.key === "F12") e.preventDefault();
+    });
+
+    // Load PDF via server-side rendering
+    fetch("' . $pdfUrl . '")
+        .then(response => response.blob())
+        .then(blob => {
+            const reader = new FileReader();
+            reader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+
+                // Load PDF.js from CDN if not already loaded
+                if (typeof pdfjsLib === "undefined") {
+                    const script = document.createElement("script");
+                    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
+                    script.onload = function() {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc =
+                            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+                        renderPDF(typedarray);
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    renderPDF(typedarray);
+                }
+            };
+            reader.readAsArrayBuffer(blob);
+        })
+        .catch(error => {
+            console.error("PDF loading error:", error);
+            loading.innerHTML = `
+                <div style="text-align:center;color:#ef4444;">
+                    <div style="font-size:24px;">⚠️</div>
+                    <p>Failed to load PDF</p>
+                    <p style="font-size:12px;">${error.message}</p>
+                </div>
+            `;
+        });
+
+    function renderPDF(data) {
+        pdfjsLib.getDocument({ data }).promise
+            .then(pdf => {
+                loading.style.display = "none";
+
+                // Render first page
+                pdf.getPage(1).then(page => {
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    viewer.appendChild(canvas);
+
+                    // Add watermark
+                    ctx.fillStyle = "rgba(0,0,0,0.1)";
+                    ctx.font = "bold 48px Arial";
+                    ctx.fillText("PROTECTED CONTENT", 50, viewport.height/2);
+
+                    // Render page
+                    page.render({
+                        canvasContext: ctx,
+                        viewport: viewport
+                    });
+                });
+            })
+            .catch(error => {
+                console.error("PDF rendering error:", error);
+                loading.innerHTML = `
+                    <div style="text-align:center;color:#ef4444;">
+                        <div style="font-size:24px;">⚠️</div>
+                        <p>Failed to render PDF</p>
+                        <p style="font-size:12px;">${error.message}</p>
+                    </div>
+                `;
+            });
+    }
+});
+</script>';
+    }
+
 }
