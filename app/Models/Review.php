@@ -63,6 +63,11 @@ class Review extends Model
         return $this->belongsTo(User::class, 'overridden_by');
     }
 
+    public function reviewRubrics(): HasMany
+    {
+        return $this->hasMany(ReviewRubric::class);
+    }
+
     // Get percentage score
     public function getPercentageAttribute(): float
     {
@@ -152,5 +157,20 @@ class Review extends Model
     public function isLocked(): bool
     {
         return $this->is_completed && !$this->hasApprovedModificationRequest();
+    }
+
+    // Calculate total rubric score
+    public function getTotalRubricScore(): float
+    {
+        return $this->reviewRubrics()->sum('points_awarded');
+    }
+
+    // Check if all rubrics are evaluated
+    public function hasAllRubricsEvaluated(): bool
+    {
+        $taskRubricsCount = $this->submission->task->rubrics()->count();
+        $reviewRubricsCount = $this->reviewRubrics()->count();
+
+        return $taskRubricsCount === $reviewRubricsCount;
     }
 }

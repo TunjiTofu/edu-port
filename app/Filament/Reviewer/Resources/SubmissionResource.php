@@ -474,6 +474,164 @@ class SubmissionResource extends Resource
                     })
                     ->columns(1),
 
+
+
+                        // NEW: Rubrics Section
+                        Forms\Components\Section::make('Rubrics Evaluation')
+                            ->schema([
+                                Forms\Components\Repeater::make('rubrics')
+                                    ->label('')
+                                    ->schema([
+                                        Forms\Components\Group::make([
+                                            Forms\Components\Placeholder::make('rubric_title')
+                                                ->label('Criteria')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    // Get rubric from the submission's task
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->title ?? 'Unknown Criteria';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+
+                                            Forms\Components\Placeholder::make('rubric_description')
+                                                ->label('Description')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->description ?: 'No description provided';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+
+                                            Forms\Components\Placeholder::make('max_points_display')
+                                                ->label('Max Points')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return ($rubric?->max_points ?? 0) . ' points';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+                                        ])->columnSpan(2),
+
+                                        Forms\Components\Group::make([
+                                            Forms\Components\Toggle::make('is_checked')
+                                                ->label('Met Criteria')
+                                                ->reactive()
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                }),
+
+                                            Forms\Components\TextInput::make('points_awarded')
+                                                ->label('Points Awarded')
+                                                ->numeric()
+                                                ->step(0.1)
+                                                ->minValue(0)
+                                                ->maxValue(function ($get, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 10;
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->max_points ?? 10;
+                                                    }
+                                                    return 10;
+                                                })
+                                                ->visible(fn (Forms\Get $get): bool => $get('is_checked'))
+                                                ->required(fn (Forms\Get $get): bool => $get('is_checked'))
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                }),
+
+                                            Forms\Components\Textarea::make('comments')
+                                                ->label('Rubric Comments')
+                                                ->rows(2)
+                                                ->placeholder('Comments on this criteria...')
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                            return $review && $review->is_completed && !$review->canBeModified();
+                        }),
+                                        ])->columnSpan(1),
+
+                                        // Hidden field to store rubric_id
+                                        Forms\Components\Hidden::make('rubric_id'),
+                                    ])
+                                    ->columns(3)
+                                    ->defaultItems(function ($record) {
+                                        if (!$record || !$record->task) return 0;
+                                        return $record->task->rubrics()->count();
+                                    })
+                                    ->addable(false)
+                                    ->deletable(false)
+                                    ->reorderable(false)
+                                    ->visible(function ($record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+
+                                Forms\Components\Placeholder::make('rubric_summary')
+                                    ->label('Rubrics Summary')
+                                    ->content(function ($record) {
+                                        if (!$record || !$record->task) return 'No rubrics available';
+
+                                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                        if (!$review) return 'No review found';
+
+                                        $totalPossible = $record->task->rubrics()->sum('max_points');
+
+                                        // Calculate from the current form state instead of database
+                                        $totalAwarded = 0;
+                                        $checkedCount = 0;
+                                        $totalCount = $record->task->rubrics()->count();
+
+                                        // This will be updated dynamically based on form state
+                                        return new \Illuminate\Support\HtmlString("
+            <div class='p-3 bg-gray-50 dark:bg-gray-800 rounded-lg'>
+                <div class='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-800 dark:text-gray-200'>
+                    <div class='flex flex-col'>
+                        <span class='font-medium'>Total Criteria:</span>
+                        <span>{$totalCount}</span>
+                    </div>
+                    <div class='flex flex-col'>
+                        <span class='font-medium'>Max Possible:</span>
+                        <span>{$totalPossible} points</span>
+                    </div>
+                    <div class='flex flex-col'>
+                        <span class='font-medium'>Status:</span>
+                        <span>In Progress</span>
+                    </div>
+                </div>
+            </div>
+        ");
+                                    })
+                                    ->visible(function ($record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+                            ])
+                            ->visible(function ($record) {
+                                return $record && $record->task && $record->task->rubrics()->count() > 0;
+                            })
+                            ->columns(1),
+
+
                 Forms\Components\Section::make('Review')
                     ->schema([
                         Forms\Components\Select::make('review_status')
@@ -496,6 +654,32 @@ class SubmissionResource extends Resource
                                 }
                             }),
 
+//                        Forms\Components\TextInput::make('review.score')
+//                            ->label('Score')
+//                            ->formatStateUsing(function ($state, $record) {
+//                                return $record->score;
+//                            })
+//                            ->numeric()
+//                            ->inputMode('decimal')
+//                            ->step('0.1')
+//                            ->minValue(0)
+//                            ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 10)
+//                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+//                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+//                            ->disabled(function (Submission $record) {
+//                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+//                                return $review && $review->is_completed && !$review->canBeModified();
+//                            })
+//                            ->validationMessages([
+//                                'numeric' => 'The score must be a valid number.',
+//                                'required' => 'Please provide a valid numeric score for this review.',
+//                                'min' => 'The score cannot be negative.',
+//                                'max' => 'The score cannot exceed the maximum allowed for this task.',
+//                            ])
+//                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : '')
+//                            ->placeholder('Enter score (numbers only)'),
+
+
                         Forms\Components\TextInput::make('review.score')
                             ->label('Score')
                             ->formatStateUsing(function ($state, $record) {
@@ -512,14 +696,16 @@ class SubmissionResource extends Resource
                                 $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
                                 return $review && $review->is_completed && !$review->canBeModified();
                             })
-                            ->validationMessages([
-                                'numeric' => 'The score must be a valid number.',
-                                'required' => 'Please provide a valid numeric score for this review.',
-                                'min' => 'The score cannot be negative.',
-                                'max' => 'The score cannot exceed the maximum allowed for this task.',
-                            ])
-                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : '')
-                            ->placeholder('Enter score (numbers only)'),
+                            ->helperText(function ($record) {
+                                if (!$record || !$record->task) return '';
+
+                                $maxScore = $record->task->max_score;
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                $rubricScore = $review ? $review->getTotalRubricScore() : 0;
+
+                                return "Maximum score: {$maxScore} points" .
+                                    ($rubricScore > 0 ? " | Rubric total: {$rubricScore} points" : '');
+                            }),
 
                         Forms\Components\Textarea::make('comments')
                             ->label('Review Comments')

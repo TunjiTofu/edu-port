@@ -17,6 +17,7 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Infolist;
+use Illuminate\Support\Facades\Log;
 
 class ResultResource extends Resource
 {
@@ -50,25 +51,13 @@ class ResultResource extends Resource
                     $query->whereNotNull('score')
                         ->where('is_completed', true);
                 },
+                'task.rubrics',
                 'task.section.trainingProgram',
                 'task.resultPublications' => function ($query) {
                     $query->where('is_published', true);
                 }
             ]);
 
-//        return parent::getEloquentQuery()
-//            ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
-//            ->join('result_publications', 'submissions.task_id', '=', 'result_publications.task_id')
-//            ->where('submissions.student_id', Auth::id())
-//            ->whereNotNull('reviews.score')
-//            ->where('reviews.is_completed', true)
-//            ->where('result_publications.is_published', true)
-//            ->select('submissions.*') // Select only submission columns to avoid conflicts
-//            ->with([
-//                'review',
-//                'task.section.trainingProgram',
-//                'task.resultPublications'
-//            ]);
     }
 
     public static function form(Form $form): Form
@@ -81,76 +70,6 @@ class ResultResource extends Resource
             ]);
     }
 
-//    public static function table(Table $table): Table
-//    {
-//        return $table
-//            ->columns([
-//
-//                ViewColumn::make('task_info')
-//                    ->label('Task')
-//                    ->view('filament.student.table.task-description', static function ($record) {
-//                        return [
-//                            'title' => $record->task->title,
-////                             'program' => $record->task->section->trainingProgram?->name,
-//                            'section' => $record->task->section?->name,
-//                        ];
-//                    }),
-//
-//                TextColumn::make('review.score')
-//                    ->label('Score')
-//                    ->badge()
-//                    ->color(fn (string $state): string => match (true) {
-//                        $state >= 7.5 => 'success',
-//                        $state >= 5 => 'warning',
-//                        default => 'danger',
-//                    })
-//                    ->formatStateUsing(fn ($state, $record) => $state . '/' . $record->task->max_score),
-//
-//                TextColumn::make('submitted_at')
-//                    ->label('Submitted')
-//                    ->dateTime('M j, Y g:i A')
-//                    ->sortable(),
-//
-//                TextColumn::make('review.reviewed_at')
-//                    ->label('Reviewed')
-//                    ->dateTime('M j, Y g:i A')
-//                    ->sortable(),
-//            ])
-//            ->filters([
-//                Tables\Filters\SelectFilter::make('task.section.trainingProgram')
-//                    ->relationship('task.section.trainingProgram', 'name')
-//                    ->label('Program'),
-//
-//                Tables\Filters\Filter::make('score_range')
-//                    ->form([
-//                        Forms\Components\Select::make('score_range')
-//                            ->options([
-//                                'excellent' => 'Excellent (7.5-10)',
-//                                'good' => 'Good (5-7.4)',
-//                                'needs_improvement' => 'Needs Improvement (0-4.9)',
-//                            ])
-//                            ->placeholder('All Scores'),
-//                    ])
-//                    ->query(function (Builder $query, array $data): Builder {
-//                        return $query->when(
-//                            $data['score_range'],
-//                            function ($query, $range) {
-//                                return $query->whereHas('review', function ($reviewQuery) use ($range) {
-//                                    match ($range) {
-//                                        'excellent' => $reviewQuery->whereBetween('score', [7.5, 10]),
-//                                        'good' => $reviewQuery->whereBetween('score', [5, 7.4]),
-//                                        'needs_improvement' => $reviewQuery->where('score', '<', 4.9),
-//                                    };
-//                                });
-//                            }
-//                        );
-//                    }),
-//            ])
-//            ->actions([
-//                Tables\Actions\ViewAction::make(),
-//            ]);
-////            ->defaultSort('review.reviewed_at', 'desc');
-//    }
 
     public static function infolist(Infolist $infolist): Infolist
     {
@@ -172,9 +91,11 @@ class ResultResource extends Resource
                             ]),
                         TextEntry::make('task.description')
                             ->label('Task Description')
+                            ->html()
                             ->columnSpanFull(),
                         TextEntry::make('task.instructions')
                             ->label('Instructions')
+                            ->html()
                             ->columnSpanFull()
                             ->visible(fn ($record) => !empty($record->task->instructions)),
                     ]),
@@ -200,18 +121,105 @@ class ResultResource extends Resource
                             ->visible(fn ($record) => !empty($record->student_notes)),
                     ]),
 
+
+                // NEW: Rubrics Breakdown Section
+                Section::make('Rubrics Breakdown')
+                    ->schema([
+                        TextEntry::make('rubrics_summary')
+                            ->label('')
+                            ->html()
+                            ->formatStateUsing(function ($record) {
+                                Log::alert('Rubricssss');
+                                // Check if we have necessary data
+                                if (!$record->review || !$record->task->rubrics->count()) {
+
+                                    Log::info('No rubrics available for this task');;
+                                    return 'No rubrics available for this task';
+                                }
+
+                                $reviewRubrics = $record->review->reviewRubrics;
+
+                                if ($reviewRubrics->isEmpty()) {
+                                    Log::info('Rubrics evaluation not completed');;
+                                    return 'Rubrics evaluation not completed';
+                                }
+
+                                $html = '<div class="space-y-4">';
+
+                                Log::info('Rubrics available for this task');
+                                foreach ($reviewRubrics as $reviewRubric) {
+                                    Log::info('Rubric: ' . $reviewRubric->rubric->title);
+                                    $isChecked = $reviewRubric->is_checked;
+                                    $checkIcon = $isChecked ? '✅' : '❌';
+                                    $statusColor = $isChecked ? 'text-green-600' : 'text-red-600';
+
+                                    $html .= '<div class="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">';
+                                    $html .= '<div class="flex items-start justify-between mb-2">';
+                                    $html .= '<h4 class="font-semibold text-gray-900 dark:text-gray-100">' . $checkIcon . ' ' . e($reviewRubric->rubric->title) . '</h4>';
+
+                                    if ($isChecked && $reviewRubric->points_awarded) {
+                                        $html .= '<span class="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 text-sm font-medium px-2 py-1 rounded">';
+                                        $html .= $reviewRubric->points_awarded . '/' . $reviewRubric->rubric->max_points . ' points';
+                                        $html .= '</span>';
+                                    } else {
+                                        $html .= '<span class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium px-2 py-1 rounded">';
+                                        $html .= '0/' . $reviewRubric->rubric->max_points . ' points';
+                                        $html .= '</span>';
+                                    }
+
+                                    $html .= '</div>';
+
+                                    if ($reviewRubric->rubric->description) {
+                                        $html .= '<p class="text-sm text-gray-600 dark:text-gray-300 mb-2">' . e($reviewRubric->rubric->description) . '</p>';
+                                    }
+
+                                    if ($reviewRubric->comments) {
+                                        $html .= '<div class="mt-2 p-2 bg-white dark:bg-gray-700 rounded border dark:border-gray-600">';
+                                        $html .= '<strong class="text-sm text-gray-700 dark:text-gray-200">Reviewer Comments:</strong>';
+                                        $html .= '<p class="text-sm text-gray-800 dark:text-gray-100 mt-1">' . nl2br(e($reviewRubric->comments)) . '</p>';
+                                        $html .= '</div>';
+                                    }
+
+                                    $html .= '</div>';
+                                }
+
+                                // Summary
+                                $totalPossible = $record->task->rubrics->sum('max_points');
+                                $totalAwarded = $reviewRubrics->sum('points_awarded');
+                                $checkedCount = $reviewRubrics->where('is_checked', true)->count();
+                                $totalCount = $reviewRubrics->count();
+                                $percentage = $totalPossible > 0 ? round(($totalAwarded / $totalPossible) * 100, 1) : 0;
+
+                                $html .= '<div class="mt-6 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg">';
+                                $html .= '<h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-2">Rubrics Summary</h4>';
+                                $html .= '<div class="grid grid-cols-3 gap-4 text-sm">';
+                                $html .= '<div><span class="font-medium">Criteria Met:</span> <span class="ml-1">' . $checkedCount . '/' . $totalCount . '</span></div>';
+                                $html .= '<div><span class="font-medium">Total Points:</span> <span class="ml-1">' . $totalAwarded . '/' . $totalPossible . '</span></div>';
+                                $html .= '<div><span class="font-medium">Percentage:</span> <span class="ml-1">' . $percentage . '%</span></div>';
+                                $html .= '</div>';
+                                $html .= '</div>';
+
+                                $html .= '</div>';
+
+                                return $html; // Return plain HTML string
+                            })
+                            ->columnSpanFull(),
+                    ]),
+//                    ->visible(function ($record) {
+//                        return $record->review &&
+//                            $record->task->rubrics->count() > 0 &&
+//                            $record->review->reviewRubrics->count() > 0;
+//                    }),
+
+
+
                 Section::make('Review & Results')
                     ->schema([
                         Grid::make(2)
                             ->schema([
                                 TextEntry::make('review.score')
-                                    ->label('Score')
+                                    ->label('Final Score')
                                     ->badge()
-//                                    ->color(fn ($state, $record): string => match (true) {
-//                                        $state >= 7.5 => 'success',
-//                                        $state >= 5 => 'warning',
-//                                        default => 'danger',
-//                                    })
                                     ->color(function ($state, $record) {
                                         $maxScore = $record->task->max_score;
                                         $score = $record->score;
@@ -227,12 +235,9 @@ class ResultResource extends Resource
                                     ->dateTime(),
                             ]),
                         TextEntry::make('review.comments')
-                            ->label('Reviewer Comments')
+                            ->label('Overall Reviewer Comments')
                             ->columnSpanFull()
                             ->visible(fn ($record) => !empty($record->review?->comments)),
-//                        TextEntry::make('review.reviewer.name')
-//                            ->label('Reviewed By')
-//                            ->visible(fn ($record) => !empty($record->review?->reviewer)),
                     ]),
             ]);
     }

@@ -6,6 +6,7 @@ use App\Enums\SubmissionTypes;
 use App\Filament\Reviewer\Resources\SubmissionResource;
 use App\Models\Review;
 use App\Models\ReviewModificationRequest;
+use App\Models\ReviewRubric;
 use Filament\Actions;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Textarea;
@@ -174,6 +175,54 @@ class EditSubmission extends EditRecord
 
             // Set the review status based on the submission status
             $data['review_status'] = $this->record->status;
+
+            // Load rubrics data
+//            if ($this->record->task->rubrics()->count() > 0) {
+//                $rubrics = [];
+//
+//                foreach ($this->record->task->rubrics as $index => $taskRubric) {
+//                    $reviewRubric = $review->reviewRubrics()
+//                        ->where('rubric_id', $taskRubric->id)
+//                        ->first();
+//
+//                    $rubrics[] = [
+//                        'rubric_id' => $taskRubric->id,
+//                        'is_checked' => $reviewRubric?->is_checked ?? false,
+//                        'points_awarded' => $reviewRubric?->points_awarded ?? 0,
+//                        'comments' => $reviewRubric?->comments ?? '',
+//                    ];
+//                }
+//
+//                $data['rubrics'] = $rubrics;
+//            }
+
+            try {
+                // Check if task has rubrics method and rubrics exist
+                if ($this->record->task && $this->record->task->rubrics()->exists()) {
+                    $rubrics = [];
+
+                    foreach ($this->record->task->rubrics as $taskRubric) {
+                        $reviewRubric = ReviewRubric::where('review_id', $review->id)
+                            ->where('rubric_id', $taskRubric->id)
+                            ->first();
+
+                        $rubrics[] = [
+                            'rubric_id' => $taskRubric->id,
+                            'rubric_title' => $taskRubric->title ?? $taskRubric->name,
+                            'rubric_description' => $taskRubric->description,
+                            'max_points' => $taskRubric->max_points ?? 0,
+                            'is_checked' => $reviewRubric?->is_checked ?? false,
+                            'points_awarded' => $reviewRubric?->points_awarded ?? 0,
+                            'comments' => $reviewRubric?->comments ?? '',
+                        ];
+                    }
+
+                    $data['rubrics'] = $rubrics;
+                }
+            } catch (\Exception $e) {
+                // Silently handle cases where rubrics aren't set up yet
+                \Log::info('Rubrics not available for task: ' . $this->record->task->id);
+            }
         }
 
         return $data;
@@ -228,6 +277,25 @@ class EditSubmission extends EditRecord
                 ]
             );
 
+            // Handle rubrics data
+            if (isset($data['rubrics']) && is_array($data['rubrics'])) {
+                foreach ($data['rubrics'] as $rubricData) {
+                    if (!isset($rubricData['rubric_id'])) continue;
+
+                    ReviewRubric::updateOrCreate(
+                        [
+                            'review_id' => $review->id,
+                            'rubric_id' => $rubricData['rubric_id'],
+                        ],
+                        [
+                            'is_checked' => $rubricData['is_checked'] ?? false,
+                            'points_awarded' => $rubricData['points_awarded'] ?? 0,
+                            'comments' => $rubricData['comments'] ?? null,
+                        ]
+                    );
+                }
+            }
+
             // If this was a modification of a completed review with approved modification request,
             // mark the modification request as used
             if ($wasCompletedBefore && $hadApprovedModification && $isCompleted) {
@@ -279,6 +347,30 @@ class EditSubmission extends EditRecord
             ]);
 
             $this->halt();
+        }
+    }
+
+    // Auto-populate rubrics when form loads
+    protected function afterFill(): void
+    {
+        $submission = $this->record;
+        $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+
+        // Auto-create review rubrics if they don't exist
+        if ($review && $submission->task->rubrics()->count() > 0) {
+            foreach ($submission->task->rubrics as $taskRubric) {
+                ReviewRubric::firstOrCreate(
+                    [
+                        'review_id' => $review->id,
+                        'rubric_id' => $taskRubric->id,
+                    ],
+                    [
+                        'is_checked' => false,
+                        'points_awarded' => 0,
+                        'comments' => null,
+                    ]
+                );
+            }
         }
     }
 

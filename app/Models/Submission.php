@@ -88,4 +88,36 @@ class Submission extends Model
     {
         return $this->review?->comments;
     }
+
+    // Add this method to access review rubrics for the current reviewer
+    public function currentReviewRubrics()
+    {
+        return $this->hasManyThrough(
+            ReviewRubric::class,
+            Review::class,
+            'submission_id', // Foreign key on reviews table
+            'review_id',     // Foreign key on review_rubrics table
+            'id',            // Local key on submissions table
+            'id'             // Local key on reviews table
+        )->where('reviews.reviewer_id', auth()->id());
+    }
+
+    // Alternative: Get review rubrics for a specific reviewer
+    public function reviewRubricsForReviewer($reviewerId)
+    {
+        return $this->hasManyThrough(
+            ReviewRubric::class,
+            Review::class,
+            'submission_id',
+            'review_id',
+            'id',
+            'id'
+        )->where('reviews.reviewer_id', $reviewerId);
+    }
+
+    // Get the review for the current user
+    public function currentReview()
+    {
+        return $this->hasOne(Review::class)->where('reviewer_id', auth()->id());
+    }
 }
