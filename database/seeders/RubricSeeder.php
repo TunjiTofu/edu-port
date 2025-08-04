@@ -18,16 +18,34 @@ class RubricSeeder extends Seeder
             $rubrics = [
                 [
                     'title' => 'Content Quality',
-                    'description' => 'Demonstrates clear understanding of the topic with accurate and relevant information',
+                    'description' => 'Accuracy, relevance, and depth of content provided',
                     'max_points' => 3.0,
                     'order_index' => 1,
                 ],
                 [
                     'title' => 'Organization & Structure',
-                    'description' => 'Ideas are logically organized with clear introduction, body, and conclusion',
+                    'description' => 'Clear organization, logical flow, and proper structure',
                     'max_points' => 2.0,
                     'order_index' => 2,
-                ]
+                ],
+                [
+                    'title' => 'Completeness',
+                    'description' => 'All required elements and components are included',
+                    'max_points' => 2.0,
+                    'order_index' => 3,
+                ],
+                [
+                    'title' => 'Presentation & Format',
+                    'description' => 'Professional presentation, proper formatting, and visual appeal',
+                    'max_points' => 2.0,
+                    'order_index' => 4,
+                ],
+                [
+                    'title' => 'Timeliness',
+                    'description' => 'Submitted on time and met all deadline requirements',
+                    'max_points' => 1.0,
+                    'order_index' => 5,
+                ],
             ];
 
             foreach ($rubrics as $rubricData) {

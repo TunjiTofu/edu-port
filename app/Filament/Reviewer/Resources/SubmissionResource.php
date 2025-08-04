@@ -476,9 +476,50 @@ class SubmissionResource extends Resource
 
 
 
-                        // NEW: Rubrics Section
+                        // Enhanced Rubrics Section
                         Forms\Components\Section::make('Rubrics Evaluation')
                             ->schema([
+                                // Rubrics Progress Overview
+                                Forms\Components\Placeholder::make('rubrics_progress')
+                                    ->label('Progress Overview')
+                                    ->content(function (Submission $record, $livewire) {
+                                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                        if (!$review) return 'No review found';
+
+                                        $summary = $review->getRubricsSummary();
+
+                                        return new HtmlString("
+    <div class='flex flex-row flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg'>
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-blue-600 dark:text-blue-400'>{$summary['checked_count']}/{$summary['total_count']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Criteria Met</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-green-600 dark:text-green-400'>{$summary['total_awarded']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Points Awarded</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-purple-600 dark:text-purple-400'>{$summary['total_possible']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Total Possible</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-orange-600 dark:text-orange-400'>".number_format($summary['score_percentage'], 1)."%</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Score Percentage</div>
+        </div>
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-orange-600 dark:text-orange-400'>".number_format($summary['completion_percentage'], 1)."%</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Score Percentage</div>
+        </div>
+    </div>
+");
+                                    })
+                                    ->visible(function (Submission $record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+
                                 Forms\Components\Repeater::make('rubrics')
                                     ->label('')
                                     ->schema([
@@ -489,7 +530,6 @@ class SubmissionResource extends Resource
                                                     $rubricId = $get('rubric_id');
                                                     if (!$rubricId) return 'Loading...';
 
-                                                    // Get rubric from the submission's task
                                                     $submission = $livewire->record;
                                                     if ($submission && $submission->task) {
                                                         $rubric = $submission->task->rubrics()->find($rubricId);
@@ -535,6 +575,21 @@ class SubmissionResource extends Resource
                                                     $submission = $livewire->record;
                                                     $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
                                                     return $review && $review->is_completed && !$review->canBeModified();
+                                                })
+                                                ->afterStateUpdated(function ($state, Forms\Set $set, $get, $livewire) {
+                                                    // Auto-fill points when criteria is checked
+                                                    if ($state) {
+                                                        $rubricId = $get('rubric_id');
+                                                        $submission = $livewire->record;
+                                                        if ($submission && $rubricId) {
+                                                            $rubric = $submission->task->rubrics()->find($rubricId);
+                                                            if ($rubric && !$get('points_awarded')) {
+                                                                $set('points_awarded', $rubric->max_points);
+                                                            }
+                                                        }
+                                                    } else {
+                                                        $set('points_awarded', 0);
+                                                    }
                                                 }),
 
                                             Forms\Components\TextInput::make('points_awarded')
@@ -559,6 +614,17 @@ class SubmissionResource extends Resource
                                                     $submission = $livewire->record;
                                                     $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
                                                     return $review && $review->is_completed && !$review->canBeModified();
+                                                })
+                                                ->reactive()
+                                                ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
+                                                    // Uncheck if points is 0
+                                                    if ($state == 0 && $get('is_checked')) {
+//                                                        $set('is_checked', false);
+                                                    }
+                                                    // Check if points > 0 and not already checked
+                                                    elseif ($state > 0 && !$get('is_checked')) {
+                                                        $set('is_checked', true);
+                                                    }
                                                 }),
 
                                             Forms\Components\Textarea::make('comments')
@@ -568,11 +634,10 @@ class SubmissionResource extends Resource
                                                 ->disabled(function ($livewire) {
                                                     $submission = $livewire->record;
                                                     $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
-                            return $review && $review->is_completed && !$review->canBeModified();
-                        }),
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                }),
                                         ])->columnSpan(1),
 
-                                        // Hidden field to store rubric_id
                                         Forms\Components\Hidden::make('rubric_id'),
                                     ])
                                     ->columns(3)
@@ -587,40 +652,49 @@ class SubmissionResource extends Resource
                                         return $record && $record->task && $record->task->rubrics()->count() > 0;
                                     }),
 
+                                // Enhanced Rubrics Summary with Score Consistency Check
                                 Forms\Components\Placeholder::make('rubric_summary')
-                                    ->label('Rubrics Summary')
-                                    ->content(function ($record) {
+                                    ->label('Rubrics Summary & Score Validation')
+                                    ->content(function (Submission $record, $livewire) {
                                         if (!$record || !$record->task) return 'No rubrics available';
 
                                         $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
                                         if (!$review) return 'No review found';
 
-                                        $totalPossible = $record->task->rubrics()->sum('max_points');
+                                        $summary = $review->getRubricsSummary();
+                                        $discrepancy = $review->getScoreDiscrepancy();
 
-                                        // Calculate from the current form state instead of database
-                                        $totalAwarded = 0;
-                                        $checkedCount = 0;
-                                        $totalCount = $record->task->rubrics()->count();
+                                        $html = "<div class='space-y-4'>";
 
-                                        // This will be updated dynamically based on form state
-                                        return new \Illuminate\Support\HtmlString("
-            <div class='p-3 bg-gray-50 dark:bg-gray-800 rounded-lg'>
-                <div class='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-800 dark:text-gray-200'>
-                    <div class='flex flex-col'>
-                        <span class='font-medium'>Total Criteria:</span>
-                        <span>{$totalCount}</span>
-                    </div>
-                    <div class='flex flex-col'>
-                        <span class='font-medium'>Max Possible:</span>
-                        <span>{$totalPossible} points</span>
-                    </div>
-                    <div class='flex flex-col'>
-                        <span class='font-medium'>Status:</span>
-                        <span>In Progress</span>
-                    </div>
-                </div>
-            </div>
-        ");
+                                        // Summary stats
+                                        $html .= "<div class='p-3 bg-gray-50 dark:bg-gray-800 rounded-lg'>";
+                                        $html .= "<div class='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm'>";
+                                        $html .= "<div><span class='font-medium'>Criteria Met:</span> {$summary['checked_count']}/{$summary['total_count']}</div>";
+                                        $html .= "<div><span class='font-medium'>Rubric Score:</span> {$summary['total_awarded']}/{$summary['total_possible']} points</div>";
+                                        $html .= "<div><span class='font-medium'>Completion:</span> " . number_format($summary['completion_percentage'], 1) . "%</div>";
+                                        $html .= "</div></div>";
+
+                                        // Score consistency check
+                                        if ($discrepancy) {
+                                            $html .= "<div class='p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 rounded-lg'>";
+                                            $html .= "<div class='flex items-start space-x-2'>";
+                                            $html .= "<div class='text-yellow-600'>⚠️</div>";
+                                            $html .= "<div>";
+                                            $html .= "<div class='font-medium text-yellow-800 dark:text-yellow-200'>Score Discrepancy Detected</div>";
+                                            $html .= "<div class='text-sm text-yellow-700 dark:text-yellow-300 mt-1'>";
+                                            $html .= "Manual Score: {$discrepancy['manual_score']} | Rubric Score: {$discrepancy['rubric_score']} | Difference: {$discrepancy['difference']}";
+                                            $html .= "</div></div></div></div>";
+                                        } else {
+                                            $html .= "<div class='p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded-lg'>";
+                                            $html .= "<div class='flex items-center space-x-2'>";
+                                            $html .= "<div class='text-green-600'>✅</div>";
+                                            $html .= "<div class='font-medium text-green-800 dark:text-green-200'>Scores are consistent</div>";
+                                            $html .= "</div></div>";
+                                        }
+
+                                        $html .= "</div>";
+
+                                        return new HtmlString($html);
                                     })
                                     ->visible(function ($record) {
                                         return $record && $record->task && $record->task->rubrics()->count() > 0;
@@ -768,21 +842,10 @@ class SubmissionResource extends Resource
                     ->getStateUsing(function (Submission $record) {
                         $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
 
-                        if (!$review) {
-                            return 'Not Started';
-                        }
-
-                        if (!$review->is_completed) {
-                            return 'In Progress';
-                        }
-
-                        if ($review->hasApprovedModificationRequest()) {
-                            return 'Modifiable';
-                        }
-
-                        if ($review->hasPendingModificationRequest()) {
-                            return 'Mod. Pending';
-                        }
+                        if (!$review) return 'Not Started';
+                        if (!$review->is_completed) return 'In Progress';
+                        if ($review->hasApprovedModificationRequest()) return 'Modifiable';
+                        if ($review->hasPendingModificationRequest()) return 'Mod. Pending';
 
                         return 'Completed';
                     })
@@ -797,8 +860,54 @@ class SubmissionResource extends Resource
                     ->description(function (Submission $record) {
                         $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
                         $score = $review && $review->score ? $review->score . '/' . $record->task->max_score : 'No score';
-                        return $score;
-                    }),
+
+                        // Get the REVIEW status (same logic as getStateUsing above)
+//                        $reviewStatus = 'Not Started';
+                        if ($review) {
+                            if (!$review->is_completed) {
+                                $reviewStatus = 'In Progress';
+                            } elseif ($review->hasApprovedModificationRequest()) {
+                                $reviewStatus = 'Modifiable';
+                            } elseif ($review->hasPendingModificationRequest()) {
+                                $reviewStatus = 'Mod. Pending';
+                            } else {
+                                $reviewStatus = 'Completed';
+                            }
+                        }
+
+                        $reviewStatus = $record->status;
+                        $reviewStatusDisplay = ucfirst(str_replace('_', ' ', $reviewStatus));
+
+                        // Map review status to color classes (matching your badge colors)
+                        $colorClasses = [
+                            SubmissionTypes::NEEDS_REVISION->value => 'text-gray-500 dark:text-gray-400',
+                            SubmissionTypes::UNDER_REVIEW->value => 'text-yellow-600 dark:text-yellow-400',
+                            SubmissionTypes::COMPLETED->value => 'text-green-600 dark:text-green-400',
+                            'Modifiable' => 'text-blue-600 dark:text-blue-400',
+                            'Mod. Pending' => 'text-purple-600 dark:text-purple-400',
+                        ];
+
+                        $statusColor = $colorClasses[$reviewStatus] ?? 'text-green-500';
+
+                        return new HtmlString("
+            <div class='flex items-center gap-1 text-xs'>
+                <span class='font-medium {$statusColor}'>
+                    {$reviewStatusDisplay}
+                </span>
+                <span class='text-gray-500 dark:text-gray-400'>
+                    • {$score}
+                </span>
+            </div>
+        ");
+                    })
+                    ->html(),
+//                    ->description(function (Submission $record) {
+//                        $status = $record->status;
+//
+//                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+//                        $score = $review && $review->score ? $review->score . '/' . $record->task->max_score : 'No score';
+//                        return $score;
+//                    }),
 
                 // Hide these columns by default on mobile - make them toggleable
                 Tables\Columns\TextColumn::make('student.id')

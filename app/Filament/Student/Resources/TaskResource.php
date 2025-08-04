@@ -170,14 +170,17 @@ class TaskResource extends Resource
                             ->first();
 
                         $rubrics = $record->rubrics()->active()->ordered()->get();
+//                        dd($submission->review->getRubricsSummary());
                         return view('filament.student.task.task-details', [
                             'task' => $record,
                             'submission' => $submission,
                             'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null,
                             'hasSubmission' => (bool) $submission,
                             'rubrics' => $rubrics,
+                            'rubricReview' => $submission?->review?->getRubricsSummary(),
 //                            'canSubmit' => !$submission,
 //                            'canResubmit' => $submission && $submission->status !== SubmissionTypes::COMPLETED->value,
+
                         ]);
                     })
                     ->modalActions([
