@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class AvailableTrainingProgramResource extends Resource
 {
@@ -142,15 +143,15 @@ class AvailableTrainingProgramResource extends Resource
                                 return;
                             }
 
-                            // Check if program is fully enrolled
-                            if ($record->isFullyEnrolled()) {
-                                Notification::make()
-                                    ->title('Program Full')
-                                    ->body('This program has reached its maximum enrollment capacity.')
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
+//                            // Check if program is fully enrolled
+//                            if ($record->isFullyEnrolled()) {
+//                                Notification::make()
+//                                    ->title('Program Full')
+//                                    ->body('This program has reached its maximum enrollment capacity.')
+//                                    ->warning()
+//                                    ->send();
+//                                return;
+//                            }
 
                             // Check if already enrolled (safety check)
                             $existingEnrollment = ProgramEnrollment::where('student_id', Auth::user()->id)
@@ -184,6 +185,7 @@ class AvailableTrainingProgramResource extends Resource
                             return redirect()->to('/student/training-programs');
 
                         } catch (\Exception $e) {
+                            Log::alert('Error enrolling in program: ' . $e->getMessage(), [$e]);
                             Notification::make()
                                 ->title('Enrollment Failed')
                                 ->body('There was an error enrolling in the program. Please try again.')

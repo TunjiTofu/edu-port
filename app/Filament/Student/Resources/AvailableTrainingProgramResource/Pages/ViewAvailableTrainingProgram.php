@@ -11,6 +11,7 @@ use Filament\Notifications\Notification;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ViewAvailableTrainingProgram extends ViewRecord
 {
@@ -157,10 +158,22 @@ class ViewAvailableTrainingProgram extends ViewRecord
                 ->modalSubmitActionLabel('Enroll Now')
                 ->action(function () {
                     try {
+
+                        // Check if registration is still open
+                        if (!$this->record->isRegistrationOpen()) {
+                            Notification::make()
+                                ->title('Registration Closed')
+                                ->body('Registration for this program has closed.')
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
                         // Check if already enrolled (safety check)
                         $existingEnrollment = ProgramEnrollment::where('student_id', Auth::user()->id)
                             ->where('training_program_id', $this->record->id)
                             ->first();
+
 
                         if ($existingEnrollment) {
                             Notification::make()
@@ -189,6 +202,7 @@ class ViewAvailableTrainingProgram extends ViewRecord
                         return redirect()->to('/student/training-programs');
 
                     } catch (\Exception $e) {
+                        Log::alert('Error', [$e]);
                         Notification::make()
                             ->title('Enrollment Failed')
                             ->body('There was an error enrolling in the program. Please try again.')

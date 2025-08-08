@@ -95,7 +95,21 @@ class TrainingProgram extends Model
      */
     public function isActive(): bool
     {
-        return $this->status === ProgramEnrollmentStatus::ACTIVE;
+        return $this->attributes['is_active'] ?? false;
+    }
+
+    public function isRegistrationOpen(): bool
+    {
+        $registrationDeadline = $this->attributes['registration_deadline'] ?? null;
+        if (!$registrationDeadline) {
+            return false;
+        }
+
+        if (now()->isAfter($registrationDeadline)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

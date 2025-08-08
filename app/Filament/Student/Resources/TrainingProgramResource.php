@@ -25,6 +25,21 @@ class TrainingProgramResource extends Resource
         return Auth::user()?->isStudent();
     }
 
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -141,11 +156,6 @@ class TrainingProgramResource extends Resource
         return [
             //
         ];
-    }
-
-    public static function canCreate(): bool
-    {
-        return false;
     }
 
     public static function getPages(): array

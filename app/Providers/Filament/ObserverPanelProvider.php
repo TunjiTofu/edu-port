@@ -2,13 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Observer\Pages\ChangePassword;
 use App\Filament\Reviewer\Resources\ChangePasswordResource;
-use App\Filament\Widgets\ChurchAnalyticsChart;
 use App\Filament\Widgets\ChurchStatsWidget;
-use App\Filament\Widgets\ReviewerPerformanceWidget;
 use App\Filament\Widgets\StudentDistributionBarChart;
 use App\Filament\Widgets\SubmissionAdminWidget;
 use App\Filament\Widgets\SubmissionChartWidget;
+use App\Http\Middleware\EnsureUserIsObserver;
+use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -25,7 +26,6 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Http\Middleware\EnsureUserIsObserver;
 
 class ObserverPanelProvider extends PanelProvider
 {
@@ -42,6 +42,7 @@ class ObserverPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Observer/Pages'), for: 'App\\Filament\\Observer\\Pages')
             ->pages([
                 Pages\Dashboard::class,
+                ChangePassword::class,
             ])
 //            ->discoverWidgets(in: app_path('Filament/Observer/Widgets'), for: 'App\\Filament\\Observer\\Widgets')
             ->widgets([
@@ -62,6 +63,8 @@ class ObserverPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                ForcePasswordChange::class
+
             ])
             ->authMiddleware([
                 Authenticate::class,
