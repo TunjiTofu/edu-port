@@ -4,11 +4,11 @@ namespace App\Filament\Reviewer\Resources;
 
 use App\Enums\SubmissionTypes;
 use App\Filament\Reviewer\Resources\SubmissionResource\Pages;
+use App\Models\ReviewModificationRequest;
 use App\Models\Submission;
-use Filament\Actions\Action;
+use App\Models\ModificationRequest;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -16,10 +16,9 @@ use Filament\Tables\Table;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 
 class SubmissionResource extends Resource
 {
@@ -33,18 +32,14 @@ class SubmissionResource extends Resource
         return Auth::user()?->isReviewer();
     }
 
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $reviewer = auth()->user();
-
-//        return parent::getEloquentQuery()
-//            ->whereHas('student', function ($query) use ($reviewer) {
-//                // Reviewer cannot review submissions from their own district
-//                $query->where('district_id', '!=', $reviewer->district_id);
-//            })
-//            ->with(['student', 'task.section.trainingProgram', 'reviews' => function ($query) use ($reviewer) {
-//                $query->where('reviewer_id', $reviewer->id);
-//            }]);
 
         return parent::getEloquentQuery()
             ->whereHas('reviews', function ($query) use ($reviewer) {
@@ -55,7 +50,8 @@ class SubmissionResource extends Resource
                 'task.section.trainingProgram',
                 'review',
                 'reviews' => function ($query) use ($reviewer) {
-                    $query->where('reviewer_id', $reviewer->id);
+                    $query->where('reviewer_id', $reviewer->id)
+                        ->with('modificationRequests');
                 }
             ]);
     }
@@ -130,24 +126,160 @@ class SubmissionResource extends Resource
                                 ->formatStateUsing(function ($record) {
                                     return $record->file_path.'/'.$record->file_name;
                                 })
-                                ->helperText('Click the download button (↓)'),
+                                ->helperText('Click the preview button (👁) to view the file content'),
+//                                ->helperText('Click the download button (↓)'),
 
                             Forms\Components\Actions::make([
-                                Forms\Components\Actions\Action::make('download')
-                                    ->icon('heroicon-o-arrow-down-tray')
-                                    ->url(function (Submission $record) {
-                                        return $record ? static::getDownloadUrl($record) : null;
-                                    })
-                                    ->openUrlInNewTab()
-                            ])->fullWidth()
-                        ]),
 
-                        Forms\Components\Textarea::make('student_notes')
-                            ->label('Student Notes')
-                            ->disabled()
-                            ->rows(3),
-                    ])
-                ->columns(2),
+
+
+
+                                Forms\Components\Actions\Action::make('preview')
+                                    ->label('Preview File')
+                                    ->icon('heroicon-o-eye')
+                                    ->color('primary')
+                                    ->modalHeading('File Preview - Protected Content')
+                                    ->modalDescription('This content is protected from copying, printing, and downloading.')
+                                    ->modalContent(function (Submission $record) {
+                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+
+                                        if ($fileExtension === 'pdf') {
+                                            $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+
+                                            return new HtmlString('
+<div class="pdf-preview-container" style="
+    max-height: 70vh;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    position: relative;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+" oncontextmenu="return false;">
+    <!-- Header -->
+    <div style="
+        padding: 12px 16px;
+        background: #3b82f6;
+        color: white;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+        font-weight: 600;
+    ">
+        📄 ' . htmlspecialchars($record->file_name) . ' | 🔒 PROTECTED CONTENT
+    </div>
+
+    <!-- PDF Embed Container -->
+    <div style="height: calc(70vh - 100px); position: relative; background: white;">
+        <iframe
+            src="' . $pdfUrl . '"
+            style="width:100%;height:100%;border:none;"
+            sandbox="allow-same-origin"
+            title="Secure PDF Preview"
+        ></iframe>
+    </div>
+
+    <!-- Footer notice -->
+    <div style="
+        padding: 8px 16px;
+        background: #f3f4f6;
+        border-radius: 0 0 8px 8px;
+        font-size: 12px;
+        color: #6b7280;
+        text-align: center;
+        border-top: 1px solid #e5e7eb;
+    ">
+        🔒 Protected document - Copying content is disabled
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const container = document.querySelector(".pdf-preview-container");
+
+        // Disable right-click
+        container.addEventListener("contextmenu", e => e.preventDefault());
+
+        // Disable keyboard shortcuts
+        document.addEventListener("keydown", e => {
+            if (e.ctrlKey && (e.key === "c" || e.key === "s" || e.key === "p")) e.preventDefault();
+            if (e.key === "F12") e.preventDefault();
+        });
+
+        // Add additional security for iframe
+        const iframe = container.querySelector("iframe");
+        iframe.addEventListener("load", function() {
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+                // Disable text selection
+                iframeDoc.addEventListener("selectstart", e => e.preventDefault());
+
+                // Add watermark
+                const watermark = iframeDoc.createElement("div");
+                watermark.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    pointer-events: none;
+                    background: repeating-linear-gradient(
+                        45deg,
+                        transparent,
+                        transparent 100px,
+                        rgba(59, 130, 246, 0.03) 100px,
+                        rgba(59, 130, 246, 0.03) 200px
+                    );
+                    z-index: 1000;
+                `;
+                iframeDoc.body.appendChild(watermark);
+            } catch (e) {
+                console.log("Security restrictions prevent full protection");
+            }
+        });
+    });
+</script>
+            ');
+                                        }
+                                    })
+                                    ->modalWidth('7xl')
+                                    ->modalSubmitAction(false)
+                                    ->modalCancelActionLabel('Close')
+                                    ->closeModalByClickingAway(false),
+
+
+
+//
+//                                Forms\Components\Actions\Action::make('open_pdf')
+//                                    ->label('Open PDF')
+//                                    ->icon('heroicon-o-arrow-top-right-on-square')
+//                                    ->color('gray')
+//                                    ->url(function (Submission $record) {
+//                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//                                        if ($fileExtension === 'pdf') {
+//                                            return route('reviewer.submissions.file', ['submission' => $record]);
+//                                        }
+//                                        return null;
+//                                    })
+//                                    ->openUrlInNewTab()
+//                                    ->visible(function (Submission $record) {
+//                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//                                        return $fileExtension === 'pdf';
+//                                    })
+//                                    ->tooltip('Open PDF in new browser tab')
+
+
+
+                            ]),
+
+                            Forms\Components\Textarea::make('student_notes')
+                                ->label('Student Notes')
+                                ->disabled()
+                                ->rows(3),
+                        ])
+                            ->columns(2),
 
                 Forms\Components\Section::make('Similarity Check')
                     ->schema([
@@ -164,6 +296,416 @@ class SubmissionResource extends Resource
                     ->columns(2)
                     ->visible(fn (Submission $record): bool => $record->similarity_score !== null),
 
+                // Review Lock Status Section
+                Forms\Components\Section::make('Review Status')
+                    ->schema([
+                        Forms\Components\Placeholder::make('review_lock_status')
+                            ->label('Review Lock Status')
+                            ->content(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+
+                                if (!$review || !$review->is_completed) {
+                                    $content = '✅ Review not completed - editing allowed';
+                                    $color = 'text-green-600 bg-green-50 border-green-200';
+                                } elseif ($review->hasApprovedModificationRequest()) {
+                                    $content = '✅ Admin has approved modification of this completed review';
+                                    $color = 'text-green-600 bg-green-50 border-green-200';
+                                } elseif ($review->hasPendingModificationRequest()) {
+                                    $content = '⏳ Modification request pending admin approval';
+                                    $color = 'text-amber-600 bg-amber-50 border-amber-200';
+                                } else {
+                                    $content = '🔒 Review completed - modification requires admin approval';
+                                    $color = 'text-red-600 bg-red-50 border-red-200';
+                                }
+
+                                return new HtmlString(
+                                    '<div class="p-3 rounded-lg border ' . $color . '">' .
+                                    '<span class="font-medium">' . e($content) . '</span>' .
+                                    '</div>'
+                                );
+                            })
+                    ])
+                    ->visible(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        return $review && $review->is_completed;
+                    })
+                    ->columns(1),
+
+                // Modification Request Section
+                Forms\Components\Section::make('Request Modification')
+                    ->schema([
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('submit_modification_request')
+                                ->label('Submit Modification Request')
+                                ->icon('heroicon-o-pencil-square')
+                                ->color('warning')
+                                ->form([
+                                    Forms\Components\Textarea::make('modification_reason')
+                                        ->label('Reason for Modification')
+                                        ->placeholder('Explain why you need to modify this completed review...')
+                                        ->rows(3)
+                                        ->required()
+                                        ->validationMessages([
+                                            'required' => 'Please provide a reason for requesting modification.',
+                                        ]),
+                                ])
+                                ->action(function (Submission $record, array $data) {
+                                    $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+
+                                    if (!$review) {
+                                        Notification::make()
+                                            ->title('Error')
+                                            ->body('No review found for this submission.')
+                                            ->danger()
+                                            ->send();
+                                        return;
+                                    }
+
+                                    // Create modification request
+                                    ReviewModificationRequest::create([
+                                        'review_id' => $review->id,
+                                        'reviewer_id' => auth()->id(),
+                                        'reason' => $data['modification_reason'],
+                                        'status' => 'pending',
+                                        'requested_at' => now(),
+                                    ]);
+
+                                    Notification::make()
+                                        ->title('Modification Request Submitted')
+                                        ->body('Your request has been sent to administrators for approval.')
+                                        ->success()
+                                        ->send();
+
+                                    // Optionally redirect or refresh
+//                                    $this->refreshFormData(['modification_history', 'review_lock_status']);
+                                })
+                                ->modalHeading('Request Modification')
+                                ->modalDescription('Please explain why you need to modify this completed review.')
+                                ->modalSubmitActionLabel('Submit Request')
+                                ->closeModalByClickingAway(false)
+                        ])->fullWidth()
+                    ])
+                    ->visible(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        return $review &&
+                            $review->is_completed &&
+                            !$review->hasApprovedModificationRequest() &&
+                            !$review->hasPendingModificationRequest();
+                    })
+                    ->columns(1),
+
+                // Modification History Section
+                Forms\Components\Section::make('Modification History')
+                    ->schema([
+                        Forms\Components\Placeholder::make('modification_history')
+                            ->label('')
+                            ->content(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+
+                                if (!$review) {
+                                    return 'No review found.';
+                                }
+
+                                $requests = $review->modificationRequests()
+                                    ->orderBy('created_at', 'desc')
+                                    ->get();
+
+                                if ($requests->isEmpty()) {
+                                    return 'No modification requests found.';
+                                }
+
+                                $html = '<div class="space-y-3">';
+
+                                foreach ($requests as $request) {
+                                    $statusColor = match($request->status) {
+                                        'pending' => 'text-amber-600 dark:text-amber-400',
+                                        'approved' => 'text-green-600 dark:text-green-400',
+                                        'rejected' => 'text-red-600 dark:text-red-400',
+                                        default => 'text-gray-600 dark:text-gray-400'
+                                    };
+
+                                    $statusIcon = match($request->status) {
+                                        'pending' => '⏳',
+                                        'approved' => '✅',
+                                        'rejected' => '❌',
+                                        default => '•'
+                                    };
+
+                                    $html .= '<div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">';
+                                    $html .= '<div class="flex justify-between items-start">';
+                                    $html .= '<span class="font-medium ' . $statusColor . '">' . $statusIcon . ' ' . ucfirst($request->status) . '</span>';
+                                    $html .= '<span class="text-sm text-gray-700 dark:text-gray-200">' .
+                                        ($request->requested_at ? $request->requested_at->format('M j, Y g:i A') :
+                                            ($request->created_at ? $request->created_at->format('M j, Y g:i A') : 'Unknown date')) .
+                                        '</span>';
+                                    $html .= '</div>';
+                                    $html .= '<div class="mt-2 text-sm text-gray-700 dark:text-gray-200">';
+                                    $html .= '<strong>Reason:</strong> ' . e($request->reason);
+                                    $html .= '</div>';
+
+                                    $html .= '<div class="mt-2 text-sm text-gray-700 dark:text-gray-200">';
+                                    $html .= '<strong>Admin\'s Comment:</strong> ' . e($request->admin_comments);
+                                    $html .= '</div>';
+
+                                    if ($request->admin_response) {
+                                        $html .= '<div class="mt-2 text-sm text-gray-700 dark:text-gray-300">';
+                                        $html .= '<strong>Admin Response:</strong> ' . e($request->admin_response);
+                                        $html .= '</div>';
+                                    }
+
+                                    if ($request->reviewed_by) {
+                                        $html .= '<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">';
+                                        $html .= 'Reviewed by: ' . e($request->reviewedBy->name ?? 'Unknown') . ' on ' .
+                                            ($request->reviewed_at ? $request->reviewed_at->format('M j, Y g:i A') : 'N/A');
+                                        $html .= '</div>';
+                                    }
+
+                                    $html .= '</div>';
+                                }
+
+                                $html .= '</div>';
+
+                                return new HtmlString($html);
+                            })
+                    ])
+                    ->visible(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        return $review && $review->modificationRequests()->exists();
+                    })
+                    ->columns(1),
+
+
+
+                        // Enhanced Rubrics Section
+                        Forms\Components\Section::make('Rubrics Evaluation')
+                            ->schema([
+                                // Rubrics Progress Overview
+                                Forms\Components\Placeholder::make('rubrics_progress')
+                                    ->label('Progress Overview')
+                                    ->content(function (Submission $record, $livewire) {
+                                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                        if (!$review) return 'No review found';
+
+                                        $summary = $review->getRubricsSummary();
+
+                                        return new HtmlString("
+    <div class='flex flex-row flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg'>
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-blue-600 dark:text-blue-400'>{$summary['checked_count']}/{$summary['total_count']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Criteria Met</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-green-600 dark:text-green-400'>{$summary['total_awarded']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Points Awarded</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-purple-600 dark:text-purple-400'>{$summary['total_possible']}</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Total Possible</div>
+        </div>
+
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-orange-600 dark:text-orange-400'>".number_format($summary['score_percentage'], 1)."%</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Score Percentage</div>
+        </div>
+        <div class='flex-1 min-w-[120px] text-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-xs'>
+            <div class='text-2xl font-bold text-orange-600 dark:text-orange-400'>".number_format($summary['completion_percentage'], 1)."%</div>
+            <div class='text-sm text-gray-600 dark:text-white'>Score Percentage</div>
+        </div>
+    </div>
+");
+                                    })
+                                    ->visible(function (Submission $record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+
+                                Forms\Components\Repeater::make('rubrics')
+                                    ->label('')
+                                    ->schema([
+                                        Forms\Components\Group::make([
+                                            Forms\Components\Placeholder::make('rubric_title')
+                                                ->label('Criteria')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->title ?? 'Unknown Criteria';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+
+                                            Forms\Components\Placeholder::make('rubric_description')
+                                                ->label('Description')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->description ?: 'No description provided';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+
+                                            Forms\Components\Placeholder::make('max_points_display')
+                                                ->label('Max Points')
+                                                ->content(function ($get, $state, $record, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 'Loading...';
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return ($rubric?->max_points ?? 0) . ' points';
+                                                    }
+                                                    return 'Loading...';
+                                                }),
+                                        ])->columnSpan(2),
+
+                                        Forms\Components\Group::make([
+                                            Forms\Components\Toggle::make('is_checked')
+                                                ->label('Met Criteria')
+                                                ->reactive()
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                })
+                                                ->afterStateUpdated(function ($state, Forms\Set $set, $get, $livewire) {
+                                                    // Auto-fill points when criteria is checked
+                                                    if ($state) {
+                                                        $rubricId = $get('rubric_id');
+                                                        $submission = $livewire->record;
+                                                        if ($submission && $rubricId) {
+                                                            $rubric = $submission->task->rubrics()->find($rubricId);
+                                                            if ($rubric && !$get('points_awarded')) {
+                                                                $set('points_awarded', $rubric->max_points);
+                                                            }
+                                                        }
+                                                    } else {
+                                                        $set('points_awarded', 0);
+                                                    }
+                                                }),
+
+                                            Forms\Components\TextInput::make('points_awarded')
+                                                ->label('Points Awarded')
+                                                ->numeric()
+                                                ->step(0.1)
+                                                ->minValue(0)
+                                                ->maxValue(function ($get, $livewire) {
+                                                    $rubricId = $get('rubric_id');
+                                                    if (!$rubricId) return 10;
+
+                                                    $submission = $livewire->record;
+                                                    if ($submission && $submission->task) {
+                                                        $rubric = $submission->task->rubrics()->find($rubricId);
+                                                        return $rubric?->max_points ?? 10;
+                                                    }
+                                                    return 10;
+                                                })
+                                                ->visible(fn (Forms\Get $get): bool => $get('is_checked'))
+                                                ->required(fn (Forms\Get $get): bool => $get('is_checked'))
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                })
+                                                ->reactive()
+                                                ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
+                                                    // Uncheck if points is 0
+                                                    if ($state == 0 && $get('is_checked')) {
+//                                                        $set('is_checked', false);
+                                                    }
+                                                    // Check if points > 0 and not already checked
+                                                    elseif ($state > 0 && !$get('is_checked')) {
+                                                        $set('is_checked', true);
+                                                    }
+                                                }),
+
+                                            Forms\Components\Textarea::make('comments')
+                                                ->label('Rubric Comments')
+                                                ->rows(2)
+                                                ->placeholder('Comments on this criteria...')
+                                                ->disabled(function ($livewire) {
+                                                    $submission = $livewire->record;
+                                                    $review = $submission->reviews()->where('reviewer_id', auth()->id())->first();
+                                                    return $review && $review->is_completed && !$review->canBeModified();
+                                                }),
+                                        ])->columnSpan(1),
+
+                                        Forms\Components\Hidden::make('rubric_id'),
+                                    ])
+                                    ->columns(3)
+                                    ->defaultItems(function ($record) {
+                                        if (!$record || !$record->task) return 0;
+                                        return $record->task->rubrics()->count();
+                                    })
+                                    ->addable(false)
+                                    ->deletable(false)
+                                    ->reorderable(false)
+                                    ->visible(function ($record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+
+                                // Enhanced Rubrics Summary with Score Consistency Check
+                                Forms\Components\Placeholder::make('rubric_summary')
+                                    ->label('Rubrics Summary & Score Validation')
+                                    ->content(function (Submission $record, $livewire) {
+                                        if (!$record || !$record->task) return 'No rubrics available';
+
+                                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                        if (!$review) return 'No review found';
+
+                                        $summary = $review->getRubricsSummary();
+                                        $discrepancy = $review->getScoreDiscrepancy();
+
+                                        $html = "<div class='space-y-4'>";
+
+                                        // Summary stats
+                                        $html .= "<div class='p-3 bg-gray-50 dark:bg-gray-800 rounded-lg'>";
+                                        $html .= "<div class='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm'>";
+                                        $html .= "<div><span class='font-medium'>Criteria Met:</span> {$summary['checked_count']}/{$summary['total_count']}</div>";
+                                        $html .= "<div><span class='font-medium'>Rubric Score:</span> {$summary['total_awarded']}/{$summary['total_possible']} points</div>";
+                                        $html .= "<div><span class='font-medium'>Completion:</span> " . number_format($summary['completion_percentage'], 1) . "%</div>";
+                                        $html .= "</div></div>";
+
+                                        // Score consistency check
+                                        if ($discrepancy) {
+                                            $html .= "<div class='p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 rounded-lg'>";
+                                            $html .= "<div class='flex items-start space-x-2'>";
+                                            $html .= "<div class='text-yellow-600'>⚠️</div>";
+                                            $html .= "<div>";
+                                            $html .= "<div class='font-medium text-yellow-800 dark:text-yellow-200'>Score Discrepancy Detected</div>";
+                                            $html .= "<div class='text-sm text-yellow-700 dark:text-yellow-300 mt-1'>";
+                                            $html .= "Manual Score: {$discrepancy['manual_score']} | Rubric Score: {$discrepancy['rubric_score']} | Difference: {$discrepancy['difference']}";
+                                            $html .= "</div></div></div></div>";
+                                        } else {
+                                            $html .= "<div class='p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded-lg'>";
+                                            $html .= "<div class='flex items-center space-x-2'>";
+                                            $html .= "<div class='text-green-600'>✅</div>";
+                                            $html .= "<div class='font-medium text-green-800 dark:text-green-200'>Scores are consistent</div>";
+                                            $html .= "</div></div>";
+                                        }
+
+                                        $html .= "</div>";
+
+                                        return new HtmlString($html);
+                                    })
+                                    ->visible(function ($record) {
+                                        return $record && $record->task && $record->task->rubrics()->count() > 0;
+                                    }),
+                            ])
+                            ->visible(function ($record) {
+                                return $record && $record->task && $record->task->rubrics()->count() > 0;
+                            })
+                            ->columns(1),
+
+
                 Forms\Components\Section::make('Review')
                     ->schema([
                         Forms\Components\Select::make('review_status')
@@ -173,32 +715,80 @@ class SubmissionResource extends Resource
                                 SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
                                 SubmissionTypes::UNDER_REVIEW->value => 'Still in Review'
                             ])
-                            ->default(SubmissionTypes::UNDER_REVIEW->value )
+                            ->default(SubmissionTypes::UNDER_REVIEW->value)
                             ->reactive()
                             ->required()
+                            ->disabled(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                return $review && $review->is_completed && !$review->canBeModified();
+                            })
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state !== SubmissionTypes::COMPLETED->value) {
-                                    $set('score', 0.0);
+                                if ($state === SubmissionTypes::UNDER_REVIEW->value) {
+                                    $set('review.score', null);
                                 }
                             }),
 
-                        Forms\Components\TextInput::make('review.score')
-                            ->label('Score')
+//                        Forms\Components\TextInput::make('review.score')
+//                            ->label('Score')
 //                            ->formatStateUsing(function ($state, $record) {
-//                                dd($state);
 //                                return $record->score;
 //                            })
+//                            ->numeric()
+//                            ->inputMode('decimal')
+//                            ->step('0.1')
+//                            ->minValue(0)
+//                            ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 10)
+//                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+//                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+//                            ->disabled(function (Submission $record) {
+//                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+//                                return $review && $review->is_completed && !$review->canBeModified();
+//                            })
+//                            ->validationMessages([
+//                                'numeric' => 'The score must be a valid number.',
+//                                'required' => 'Please provide a valid numeric score for this review.',
+//                                'min' => 'The score cannot be negative.',
+//                                'max' => 'The score cannot exceed the maximum allowed for this task.',
+//                            ])
+//                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : '')
+//                            ->placeholder('Enter score (numbers only)'),
+
+
+                        Forms\Components\TextInput::make('review.score')
+                            ->label('Score')
+                            ->formatStateUsing(function ($state, $record) {
+                                return $record->score;
+                            })
                             ->numeric()
+                            ->inputMode('decimal')
+                            ->step('0.1')
                             ->minValue(0)
                             ->maxValue(fn (Forms\Get $get, $record) => $record ? $record->task->max_score : 10)
-                            ->visible(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
-                            ->required(fn (Forms\Get $get): bool => $get('review_status') === SubmissionTypes::COMPLETED->value)
-                            ->helperText(fn ($record) => $record ? "Maximum score for this task: {$record->task->max_score} points" : ''),
+                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+                            ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+                            ->disabled(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                return $review && $review->is_completed && !$review->canBeModified();
+                            })
+                            ->helperText(function ($record) {
+                                if (!$record || !$record->task) return '';
+
+                                $maxScore = $record->task->max_score;
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                $rubricScore = $review ? $review->getTotalRubricScore() : 0;
+
+                                return "Maximum score: {$maxScore} points" .
+                                    ($rubricScore > 0 ? " | Rubric total: {$rubricScore} points" : '');
+                            }),
 
                         Forms\Components\Textarea::make('comments')
                             ->label('Review Comments')
                             ->required(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
                             ->rows(4)
+                            ->disabled(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                return $review && $review->is_completed && !$review->canBeModified();
+                            })
                             ->helperText(function (Forms\Get $get) {
                                 return match($get('review_status')) {
                                     'completed' => 'Provide feedback on why this submission was approved.',
@@ -211,30 +801,14 @@ class SubmissionResource extends Resource
                             ->label('Notify Student')
                             ->default(true)
                             ->helperText('Send email notification to student about the review')
-                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value])),
+                            ->visible(fn (Forms\Get $get): bool => in_array($get('review_status'), [SubmissionTypes::COMPLETED->value, SubmissionTypes::NEEDS_REVISION->value]))
+                            ->disabled(function (Submission $record) {
+                                $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                                return $review && $review->is_completed && !$review->canBeModified();
+                            }),
                     ])
                     ->columns(2),
-
-                // Admin-only section for additional review controls
-//                Forms\Components\Section::make('Administrative Controls')
-//                    ->schema([
-//                        Forms\Components\Select::make('assign_additional_reviewer')
-//                            ->label('Assign Additional Reviewer')
-//                            ->options(function () {
-//                                return \App\Models\User::where('role', 'reviewer')
-//                                    ->where('id', '!=', auth()->id())
-//                                    ->pluck('name', 'id');
-//                            })
-//                            ->placeholder('Select a reviewer for second opinion')
-//                            ->helperText('Optional: Assign another reviewer for complex cases'),
-//
-//                        Forms\Components\Textarea::make('admin_notes')
-//                            ->label('Administrative Notes')
-//                            ->rows(2)
-//                            ->helperText('Internal notes (not visible to student)'),
-//                    ])
-//                    ->columns(2)
-//                    ->visible(fn () => auth()->user()->role === 'admin'),
+            ])
             ]);
     }
 
@@ -242,45 +816,121 @@ class SubmissionResource extends Resource
     {
         return $table
             ->columns([
+                // Primary information - always visible
                 Tables\Columns\TextColumn::make('student.name')
                     ->label('Student')
                     ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('student.id')
-                    ->label('Student ID')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('student.district.name')
-                    ->label('District')
-                    ->toggleable()
-                    ->sortable(),
+                    ->sortable()
+                    ->description(fn (Submission $record): string =>
+                        'District: ' . $record->student->district->name
+                    )
+                    ->wrap(),
+
                 Tables\Columns\TextColumn::make('task.title')
                     ->label('Task')
                     ->searchable()
+                    ->sortable()
+                    ->description(fn (Submission $record): string =>
+                        $record->task->section->name
+                    )
+                    ->wrap()
+                    ->limit(40),
+
+                // Combined status column for mobile efficiency
+                Tables\Columns\TextColumn::make('combined_status')
+                    ->label('Review Status')
+                    ->getStateUsing(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+
+                        if (!$review) return 'Not Started';
+                        if (!$review->is_completed) return 'In Progress';
+                        if ($review->hasApprovedModificationRequest()) return 'Modifiable';
+                        if ($review->hasPendingModificationRequest()) return 'Mod. Pending';
+
+                        return 'Completed';
+                    })
+                    ->badge()
+                    ->colors([
+                        'gray' => 'Not Started',
+                        'warning' => 'In Progress',
+                        'success' => 'Completed',
+                        'info' => 'Modifiable',
+                        'primary' => 'Mod. Pending',
+                    ])
+                    ->description(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        $score = $review && $review->score ? $review->score . '/' . $record->task->max_score : 'No score';
+
+                        // Get the REVIEW status (same logic as getStateUsing above)
+//                        $reviewStatus = 'Not Started';
+                        if ($review) {
+                            if (!$review->is_completed) {
+                                $reviewStatus = 'In Progress';
+                            } elseif ($review->hasApprovedModificationRequest()) {
+                                $reviewStatus = 'Modifiable';
+                            } elseif ($review->hasPendingModificationRequest()) {
+                                $reviewStatus = 'Mod. Pending';
+                            } else {
+                                $reviewStatus = 'Completed';
+                            }
+                        }
+
+                        $reviewStatus = $record->status;
+                        $reviewStatusDisplay = ucfirst(str_replace('_', ' ', $reviewStatus));
+
+                        // Map review status to color classes (matching your badge colors)
+                        $colorClasses = [
+                            SubmissionTypes::NEEDS_REVISION->value => 'text-gray-500 dark:text-gray-400',
+                            SubmissionTypes::UNDER_REVIEW->value => 'text-yellow-600 dark:text-yellow-400',
+                            SubmissionTypes::COMPLETED->value => 'text-green-600 dark:text-green-400',
+                            'Modifiable' => 'text-blue-600 dark:text-blue-400',
+                            'Mod. Pending' => 'text-purple-600 dark:text-purple-400',
+                        ];
+
+                        $statusColor = $colorClasses[$reviewStatus] ?? 'text-green-500';
+
+                        return new HtmlString("
+            <div class='flex items-center gap-1 text-xs'>
+                <span class='font-medium {$statusColor}'>
+                    {$reviewStatusDisplay}
+                </span>
+                <span class='text-gray-500 dark:text-gray-400'>
+                    • {$score}
+                </span>
+            </div>
+        ");
+                    })
+                    ->html(),
+//                    ->description(function (Submission $record) {
+//                        $status = $record->status;
+//
+//                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+//                        $score = $review && $review->score ? $review->score . '/' . $record->task->max_score : 'No score';
+//                        return $score;
+//                    }),
+
+                // Hide these columns by default on mobile - make them toggleable
+                Tables\Columns\TextColumn::make('student.id')
+                    ->label('Student ID')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('student.district.name')
+                    ->label('District')
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('task.section.name')
                     ->label('Section')
-                    ->toggleable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
                     ->label('Program')
-                    ->toggleable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
-//                Tables\Columns\IconColumn::make('similarity_checked')
-//                    ->label('Similarity')
-//                    ->boolean()
-//                    ->trueIcon('heroicon-o-check-circle')
-//                    ->falseIcon('heroicon-o-x-circle')
-//                    ->trueColor('success')
-//                    ->falseColor('danger'),
-//                Tables\Columns\TextColumn::make('similarity_score')
-//                    ->label('Score %')
-//                    ->formatStateUsing(fn ($state) => $state ? $state . '%' : '-')
-//                    ->color(fn ($state) => match (true) {
-//                        $state > 70 => 'danger',
-//                        $state > 50 => 'warning',
-//                        default => 'success'
-//                    }),
+
                 Tables\Columns\TextColumn::make('submission.status')
                     ->label('Submission Status')
                     ->getStateUsing(function (Submission $record) {
@@ -289,161 +939,481 @@ class SubmissionResource extends Resource
                     ->badge()
                     ->colors([
                         'gray' => SubmissionTypes::PENDING_REVIEW->value,
-                        'info' => SubmissionTypes::UNDER_REVIEW->value ,
+                        'info' => SubmissionTypes::UNDER_REVIEW->value,
                         'warning' => SubmissionTypes::NEEDS_REVISION->value,
                         'success' => SubmissionTypes::COMPLETED->value,
                         'danger' => SubmissionTypes::FLAGGED->value,
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                    ]),
-
-                Tables\Columns\TextColumn::make('review.is_completed')
-                    ->label('Review Completed')
+                Tables\Columns\TextColumn::make('score')
+                    ->label('Score')
                     ->getStateUsing(function (Submission $record) {
-                        return $record->review?->is_completed ? 'Yes' : 'No';
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        return $review && $review->score ? $review->score . '/' . $record->task->max_score : '-';
                     })
-                    ->badge()
-                    ->colors([
-                        'success' => 'Yes',
-                        'danger' => 'No',
-                    ]),
-                Tables\Columns\TextColumn::make('submitted_at')
-                    ->label('Submitted')
-                    ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('review.reviewed_at')
-                    ->label('Reviewed')
+                Tables\Columns\TextColumn::make('reviewed_at')
+                    ->label('Reviewed At')
+                    ->getStateUsing(function (Submission $record) {
+                        $review = $record->reviews()->where('reviewer_id', auth()->id())->first();
+                        return $review && $review->is_completed ? $review->updated_at : null;
+                    })
                     ->dateTime()
-                    ->placeholder('Not reviewed yet')
-                    ->sortable(),
+                    ->since() // Shows "2 hours ago" instead of full date
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('task.section.training_program_id')
-                    ->label('Training Program')
-                    ->relationship('task.section.trainingProgram', 'name'),
-                SelectFilter::make('task.section_id')
-                    ->label('Section')
-                    ->relationship('task.section', 'name'),
-                SelectFilter::make('student.district_id')
-                    ->label('Student District')
-                    ->relationship('student.district', 'name'),
-                Filter::make('pending_review')
-                    ->label('Pending Review')
-                    ->query(fn (Builder $query): Builder => $query
-                        ->whereHas('reviews', function ($q) {
-                            $q->where('reviewer_id', auth()->id())
-                                ->where('is_completed', false);
-                        })
-                    ),
+                SelectFilter::make('status')
+                    ->label('Submission Status')
+                    ->options([
+                        SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
+                        SubmissionTypes::UNDER_REVIEW->value => 'Under Review',
+                        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
+                        SubmissionTypes::COMPLETED->value => 'Completed',
+                        SubmissionTypes::FLAGGED->value => 'Flagged',
+                    ]),
+
+                Filter::make('review_status')
+                    ->form([
+                        Forms\Components\Select::make('review_completed')
+                            ->label('Review Status')
+                            ->options([
+                                'not_started' => 'Not Started',
+                                'in_progress' => 'In Progress',
+                                'completed' => 'Completed',
+                                'modifiable' => 'Completed (Modifiable)',
+                                'pending_mod' => 'Completed (Mod. Pending)',
+                            ])
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['review_completed'] ?? null,
+                            function (Builder $query, $status) {
+                                $reviewer = auth()->user();
+
+                                return match($status) {
+                                    'not_started' => $query->whereDoesntHave('reviews', function ($q) use ($reviewer) {
+                                        $q->where('reviewer_id', $reviewer->id);
+                                    }),
+                                    'in_progress' => $query->whereHas('reviews', function ($q) use ($reviewer) {
+                                        $q->where('reviewer_id', $reviewer->id)
+                                            ->where('is_completed', false);
+                                    }),
+                                    'completed' => $query->whereHas('reviews', function ($q) use ($reviewer) {
+                                        $q->where('reviewer_id', $reviewer->id)
+                                            ->where('is_completed', true)
+                                            ->whereDoesntHave('modificationRequests');
+                                    }),
+                                    'modifiable' => $query->whereHas('reviews', function ($q) use ($reviewer) {
+                                        $q->where('reviewer_id', $reviewer->id)
+                                            ->where('is_completed', true)
+                                            ->whereHas('modificationRequests', function ($modQ) {
+                                                $modQ->where('status', 'approved');
+                                            });
+                                    }),
+                                    'pending_mod' => $query->whereHas('reviews', function ($q) use ($reviewer) {
+                                        $q->where('reviewer_id', $reviewer->id)
+                                            ->where('is_completed', true)
+                                            ->whereHas('modificationRequests', function ($modQ) {
+                                                $modQ->where('status', 'pending');
+                                            });
+                                    }),
+                                    default => $query
+                                };
+                            }
+                        );
+                    }),
+
+                SelectFilter::make('program')
+                    ->relationship('task.section.trainingProgram', 'name')
+                    ->label('Training Program'),
+
+                SelectFilter::make('section')
+                    ->relationship('task.section', 'name')
+                    ->label('Section'),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->label('View & Review'),
-//                Tables\Actions\EditAction::make()
-//                    ->label('View & Review')
-//                    ->icon('heroicon-m-eye'),
-                Tables\Actions\Action::make('download')
-                    ->label('Download')
-                    ->icon('heroicon-m-arrow-down-tray')
-//                    ->url(function (Submission $record) {
-////                        if (!Storage::exists($record->file_path)) {
-////                            Notification::make()
-////                                ->title('File not found')
-////                                ->danger()
-////                                ->send();
-////                            return null;
-////                        }
-//                        return Storage::url($record->file_path.'/'.$record->file_name);
-//                    })
-//                    ->url(fn (Submission $record) => route('submission.download', $record))
-                    ->url(function (Submission $record) {
-                        return $record ? static::getDownloadUrl($record) : null;
-                    })
-                    ->openUrlInNewTab()
-                    ->hidden(fn (Submission $record): bool => !Storage::exists($record->file_path.'/'.$record->file_name)),
-
-//                Tables\Actions\Action::make('download') // Changed from Action to Tables\Actions\Action
-//                ->label('Download')
-//                    ->icon('heroicon-m-arrow-down-tray')
-//                    ->url(fn (Submission $record): string => Storage::url($record->file_path.'/'.$record->file_name))
-//                    ->openUrlInNewTab(),
-
-
-//                Tables\Actions\Action::make('check_similarity') // Changed from Action to Tables\Actions\Action
-//                ->label('Check Similarity')
-//                    ->icon('heroicon-m-magnifying-glass')
-//                    ->action(function (Submission $record) {
-//                        // Trigger similarity check
-////                        app(\App\Services\SimilarityCheckService::class)->checkSimilarity($record);
-////
-////                        Notification::make()
-////                            ->title('Similarity check initiated')
-////                            ->success()
-////                            ->send();
-//                    })
-//                    ->visible(fn (Submission $record): bool => !$record->similarity_checked),
+                Tables\Actions\EditAction::make()
+                    ->label('Review')
+                    ->icon('heroicon-o-eye'),
             ])
             ->bulkActions([
-//                Tables\Actions\BulkActionGroup::make([
-//                    Tables\Actions\DeleteBulkAction::make(),
-//                ]),
+                // You can add bulk actions here if needed
             ])
-            ->defaultSort('submitted_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            // Add these mobile-friendly configurations
+            ->striped()
+            ->paginated([10, 25, 50])
+            ->defaultPaginationPageOption(10); // Smaller page sizes for mobile
+    }
+
+    /**
+     * Get download URL for submission file
+     */
+    protected static function getDownloadUrl(Submission $record): ?string
+    {
+        if (!$record->file_path || !$record->file_name) {
+            return null;
+        }
+
+        $fullPath = $record->file_path . '/' . $record->file_name;
+
+        if (!Storage::exists($fullPath)) {
+            return null;
+        }
+
+        return Storage::temporaryUrl($fullPath, now()->addMinutes(30));
     }
 
     public static function getRelations(): array
     {
         return [
-            //
+            // Add relations if needed
         ];
     }
 
     public static function getPages(): array
     {
         return [
-//            'index' => Pages\ListSubmissions::route('/'),
-//            'create' => Pages\CreateSubmission::route('/create'),
-//            'edit' => Pages\EditSubmission::route('/{record}/edit'),
-
             'index' => Pages\ListSubmissions::route('/'),
-            'view' => Pages\ViewSubmission::route('/{record}'),
             'edit' => Pages\EditSubmission::route('/{record}/edit'),
         ];
     }
 
-    public static function canCreate(): bool
-    {
-        return false; // Reviewers cannot create submissions
-    }
-
-//    public static function canDelete(Model $record): bool
+    /**
+     * Get file content for preview - Updated with PDF support
+     */
+//    protected static function getFileContent(Submission $record): ?string
 //    {
-//        return false; // Reviewers cannot delete submissions
+//        if (!$record->file_path || !$record->file_name) {
+//            return null;
+//        }
+//
+//        $fullPath = $record->file_path . '/' . $record->file_name;
+//
+//        if (!Storage::exists($fullPath)) {
+//            return null;
+//        }
+//
+//        try {
+//            $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//
+//            // Handle different file types
+//            switch ($fileExtension) {
+//                case 'pdf':
+//                    // Option 1: Embed PDF using browser's native PDF viewer
+//                    return static::getPdfPreviewHtml($record, $fullPath);
+//
+//                case 'txt':
+//                case 'md':
+//                case 'php':
+//                case 'js':
+//                case 'html':
+//                case 'css':
+//                case 'json':
+//                case 'xml':
+//                case 'yml':
+//                case 'yaml':
+//                    // Text-based files - return as is
+//                    $content = Storage::get($fullPath);
+//                    return $content;
+//
+//                case 'doc':
+//                case 'docx':
+//                    return 'Word documents cannot be previewed in text format. Please use the download option.';
+//
+//                default:
+//                    $content = Storage::get($fullPath);
+//                    // Try to detect if it's text content
+//                    if (mb_check_encoding($content, 'UTF-8') && ctype_print(substr($content, 0, 1000))) {
+//                        return $content;
+//                    } else {
+//                        return 'Binary file cannot be previewed in text format. Please use the download option.';
+//                    }
+//            }
+//
+//        } catch (\Exception $e) {
+//            \Log::error('Error reading file for preview: ' . $e->getMessage(), [
+//                'file_path' => $fullPath,
+//                'submission_id' => $record->id
+//            ]);
+//
+//            return 'Error reading file content. Please try downloading the file instead.';
+//        }
 //    }
 
-    protected static function getDownloadUrl(Submission $submission): ?string
-    {
-        try {
-            $fullPath = $submission->file_path.'/'.$submission->file_name;
 
-            // Check if file exists first
-            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
-                Log::error("File not found at path: {$fullPath}");
-                return null;
+
+    /**
+     * Get file content for preview - Updated with better PDF detection
+     */
+
+    protected static function getFileContent(Submission $record): ?string
+    {
+        if (!$record->file_path || !$record->file_name) {
+            \Log::warning('Missing file path or name', [
+                'submission_id' => $record->id,
+                'file_path' => $record->file_path,
+                'file_name' => $record->file_name
+            ]);
+            return 'Error: Missing file path or filename';
+        }
+
+        $fullPath = $record->file_path . '/' . $record->file_name;
+
+        \Log::info('Attempting to read file', [
+            'submission_id' => $record->id,
+            'full_path' => $fullPath,
+            'storage_disk' => config('filesystems.default'),
+            'file_exists' => Storage::exists($fullPath)
+        ]);
+
+        if (!Storage::exists($fullPath)) {
+            // Try alternative paths
+            $alternativePaths = [
+                $record->file_name,
+                'submissions/' . $record->file_name,
+                'uploads/' . $record->file_name,
+                'storage/app/' . $fullPath,
+            ];
+
+            foreach ($alternativePaths as $altPath) {
+                if (Storage::exists($altPath)) {
+                    \Log::info('Found file at alternative path', [
+                        'original_path' => $fullPath,
+                        'found_path' => $altPath
+                    ]);
+                    $fullPath = $altPath;
+                    break;
+                }
             }
 
-            // Generate temporary URL with proper expiration
-            return Storage::disk(config('filesystems.default'))
-                ->temporaryUrl(
-                    $fullPath,
-                    now()->addMinutes(30),
-                    [
-                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
-                    ]
-                );
+            if (!Storage::exists($fullPath)) {
+                \Log::error('File not found anywhere', [
+                    'tried_paths' => array_merge([$fullPath], $alternativePaths)
+                ]);
+                return 'File not found at path: ' . $fullPath;
+            }
+        }
+
+        try {
+            $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+
+            if ($fileExtension === 'pdf') {
+                $content = Storage::get($fullPath);
+                $isPdf = substr($content, 0, 4) === '%PDF';
+
+                return $isPdf ?
+                    'PDF file detected (' . strlen($content) . ' bytes). Use PDF viewer.' :
+                    'File is not a valid PDF. First 20 chars: ' . substr($content, 0, 20);
+            }
+
+            // Handle other file types
+            switch ($fileExtension) {
+                case 'txt':
+                case 'md':
+                case 'php':
+                case 'js':
+                case 'html':
+                case 'css':
+                case 'json':
+                case 'xml':
+                    $content = Storage::get($fullPath);
+                    return strlen($content) > 500000 ?
+                        substr($content, 0, 500000) . "\n\n[File truncated - too large]" :
+                        $content;
+
+                default:
+                    $content = Storage::get($fullPath);
+                    $sample = substr($content, 0, 1000);
+
+                    if (mb_check_encoding($sample, 'UTF-8') && !preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $sample)) {
+                        return strlen($content) > 500000 ?
+                            substr($content, 0, 500000) . "\n\n[File truncated]" :
+                            $content;
+                    } else {
+                        return 'Binary file (' . strtoupper($fileExtension) . ') - ' . strlen($content) . ' bytes';
+                    }
+            }
+
         } catch (\Exception $e) {
-            Log::error("Failed to generate download URL: ".$e->getMessage());
-            return null;
+            \Log::error('Error reading file content', [
+                'file_path' => $fullPath,
+                'error' => $e->getMessage(),
+                'submission_id' => $record->id
+            ]);
+
+            return 'Error reading file: ' . $e->getMessage();
         }
     }
+
+    /**
+     * Generate HTML for PDF preview - Fixed for proper loading
+     */
+
+    protected static function getPdfPreviewHtml(Submission $record, string $fullPath): string
+    {
+        // Get secure route-based URL
+        $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+
+        return '
+<div class="pdf-preview-container" style="
+    max-height: 70vh;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    position: relative;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+" oncontextmenu="return false;">
+    <!-- Header -->
+    <div style="
+        padding: 12px 16px;
+        background: #3b82f6;
+        color: white;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+        font-weight: 600;
+    ">
+        📄 ' . htmlspecialchars($record->file_name) . ' | 🔒 PROTECTED CONTENT
+    </div>
+
+    <!-- PDF Embed Container -->
+    <div style="height: calc(70vh - 100px); position: relative; background: white;">
+        <div id="pdf-viewer" style="width:100%;height:100%;overflow:auto;position:relative"></div>
+        <div id="pdf-loading" style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #6b7280;
+            font-size: 14px;
+            z-index: 10;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        ">
+            <div style="text-align: center;">
+                <div style="margin-bottom: 10px; font-size: 24px;">📄</div>
+                <div>Loading PDF...</div>
+                <div style="margin-top: 8px; font-size: 12px; color: #9ca3af;">
+                    This may take a moment
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer notice -->
+    <div style="
+        padding: 8px 16px;
+        background: #f3f4f6;
+        border-radius: 0 0 8px 8px;
+        font-size: 12px;
+        color: #6b7280;
+        text-align: center;
+        border-top: 1px solid #e5e7eb;
+    ">
+        🔒 Protected document - Copying content is disabled
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const container = document.querySelector(".pdf-preview-container");
+    const viewer = document.getElementById("pdf-viewer");
+    const loading = document.getElementById("pdf-loading");
+
+    // Disable right-click
+    container.addEventListener("contextmenu", e => e.preventDefault());
+
+    // Disable keyboard shortcuts
+    document.addEventListener("keydown", e => {
+        if (e.ctrlKey && (e.key === "c" || e.key === "s" || e.key === "p")) e.preventDefault();
+        if (e.key === "F12") e.preventDefault();
+    });
+
+    // Load PDF via server-side rendering
+    fetch("' . $pdfUrl . '")
+        .then(response => response.blob())
+        .then(blob => {
+            const reader = new FileReader();
+            reader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+
+                // Load PDF.js from CDN if not already loaded
+                if (typeof pdfjsLib === "undefined") {
+                    const script = document.createElement("script");
+                    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
+                    script.onload = function() {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc =
+                            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+                        renderPDF(typedarray);
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    renderPDF(typedarray);
+                }
+            };
+            reader.readAsArrayBuffer(blob);
+        })
+        .catch(error => {
+            console.error("PDF loading error:", error);
+            loading.innerHTML = `
+                <div style="text-align:center;color:#ef4444;">
+                    <div style="font-size:24px;">⚠️</div>
+                    <p>Failed to load PDF</p>
+                    <p style="font-size:12px;">${error.message}</p>
+                </div>
+            `;
+        });
+
+    function renderPDF(data) {
+        pdfjsLib.getDocument({ data }).promise
+            .then(pdf => {
+                loading.style.display = "none";
+
+                // Render first page
+                pdf.getPage(1).then(page => {
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    viewer.appendChild(canvas);
+
+                    // Add watermark
+                    ctx.fillStyle = "rgba(0,0,0,0.1)";
+                    ctx.font = "bold 48px Arial";
+                    ctx.fillText("PROTECTED CONTENT", 50, viewport.height/2);
+
+                    // Render page
+                    page.render({
+                        canvasContext: ctx,
+                        viewport: viewport
+                    });
+                });
+            })
+            .catch(error => {
+                console.error("PDF rendering error:", error);
+                loading.innerHTML = `
+                    <div style="text-align:center;color:#ef4444;">
+                        <div style="font-size:24px;">⚠️</div>
+                        <p>Failed to render PDF</p>
+                        <p style="font-size:12px;">${error.message}</p>
+                    </div>
+                `;
+            });
+    }
+});
+</script>';
+    }
+
 }

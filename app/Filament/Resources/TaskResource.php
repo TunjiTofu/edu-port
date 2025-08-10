@@ -5,9 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TaskResource\Pages;
 use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
-use App\Models\Section; // Add this import for your Section model
+use App\Models\Section;
+use App\Models\Rubric;
 use Filament\Forms;
-use Filament\Forms\Components\Section as FormSection; // Alias the form component
+use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -78,13 +79,10 @@ class TaskResource extends Resource
                                 'blockquote',
                                 'codeBlock'
                             ]),
-
-
                     ])->columns(1),
 
                 FormSection::make('Task Settings')
                     ->schema([
-
                         Forms\Components\TextInput::make('order_index')
                             ->label('Task Order')
                             ->numeric()
@@ -100,7 +98,7 @@ class TaskResource extends Resource
                             ->label('Maximum Score for Task')
                             ->numeric()
                             ->minValue(0)
-                            ->maxValue(10) // Enforce maximum value of 10
+                            ->maxValue(10)
                             ->default(function (?Task $record) {
                                 return $record?->max_score ?? 10;
                             })
@@ -119,7 +117,7 @@ class TaskResource extends Resource
                 FormSection::make('Grading Instructions')
                     ->schema([
                         Forms\Components\RichEditor::make('instructions')
-                            ->label('Grading Rubric')
+                            ->label('Grading Instruction(s)')
                             ->columnSpanFull()
                             ->toolbarButtons([
                                 'bold',
@@ -133,6 +131,7 @@ class TaskResource extends Resource
                             ])
                             ->helperText('Detailed instructions for reviewers on how to grade this task'),
                     ]),
+
             ]);
     }
 
@@ -167,6 +166,20 @@ class TaskResource extends Resource
                 Tables\Columns\TextColumn::make('max_score')
                     ->label('Max Score')
                     ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('rubrics_count')
+                    ->label('Rubrics')
+                    ->counts('rubrics')
+                    ->alignCenter()
+                    ->badge()
+                    ->color('secondary'),
+
+                Tables\Columns\TextColumn::make('total_rubric_points')
+                    ->label('Total Points')
+                    ->alignCenter()
+                    ->getStateUsing(fn(Task $record): string => number_format($record->getTotalRubricPoints(), 2))
+                    ->badge()
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('due_date')
                     ->date()
@@ -231,13 +244,22 @@ class TaskResource extends Resource
                                 fn(Builder $query, $date): Builder => $query->whereDate('due_date', '<=', $date),
                             );
                     }),
+
+                Tables\Filters\Filter::make('has_rubrics')
+                    ->label('Has Rubrics')
+                    ->query(fn(Builder $query): Builder => $query->has('rubrics'))
+                    ->toggle(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\Action::make('manage_rubrics')
+                    ->label('Manage Rubrics')
+                    ->icon('heroicon-o-clipboard-document-check')
+                    ->url(fn(Task $record): string => route('filament.admin.resources.rubrics.index', ['tableFilters[task][value]' => $record->id]))
+                    ->openUrlInNewTab(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (Task $record) {
-                        // Prevent deletion if there are existing submissions
                         if ($record->submissions()->exists()) {
                             Notification::make()
                                 ->title('Request Denied')
@@ -252,7 +274,6 @@ class TaskResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    // Tables\Actions\ForceDeleteBulkAction::make(),
                     Tables\Actions\RestoreBulkAction::make(),
                 ]),
             ])
@@ -262,7 +283,7 @@ class TaskResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\RubricsRelationManager::class,
         ];
     }
 
@@ -279,8 +300,8 @@ class TaskResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['section.trainingProgram'])
-            ->withCount('submissions')
+            ->with(['section.trainingProgram', 'rubrics'])
+            ->withCount(['submissions', 'rubrics'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);

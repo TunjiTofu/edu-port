@@ -2,10 +2,13 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Student\Pages\ChangePassword;
 use App\Filament\Student\Resources\ChangePasswordResource;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
+use App\Http\Middleware\EnsureUserIsStudent;
+use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -21,7 +24,6 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Http\Middleware\EnsureUserIsStudent;
 
 class StudentPanelProvider extends PanelProvider
 {
@@ -38,6 +40,7 @@ class StudentPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Student/Pages'), for: 'App\\Filament\\Student\\Pages')
             ->pages([
                 Pages\Dashboard::class,
+                ChangePassword::class,
             ])
 //            ->discoverWidgets(in: app_path('Filament/Student/Widgets'), for: 'App\\Filament\\Student\\Widgets')
             ->widgets([
@@ -55,6 +58,7 @@ class StudentPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                ForcePasswordChange::class
             ])
             ->authMiddleware([
                 Authenticate::class,

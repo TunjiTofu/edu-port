@@ -47,6 +47,11 @@ class Task extends Model
         return $this->hasMany(Submission::class)->orderBy('submitted_at', 'desc');
     }
 
+    public function rubrics(): HasMany
+    {
+        return $this->hasMany(Rubric::class)->where('is_active', true)->orderBy('order_index');
+    }
+
     /**
      * result publication
      *
@@ -75,5 +80,10 @@ class Task extends Model
     public function getPublishedResult()
     {
         return $this->resultPublications()->where('is_published', true)->first();
+    }
+
+    public function getTotalRubricPoints(): float
+    {
+        return $this->rubrics()->sum('max_points');
     }
 }

@@ -15,12 +15,13 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Columns\ViewColumn;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 
 class TaskResource extends Resource
 {
@@ -67,42 +68,18 @@ class TaskResource extends Resource
     {
         return $table
             ->columns([
-                ViewColumn::make('task_info')
-                    ->label('Details')
-                    ->view('filament.student.table.task-description', static function ($record) {
-                        return [
-                            'title' => $record->title,
-                            // 'program' => $record->section?->trainingProgram?->name,
-                            'section' => $record->section?->name,
-                        ];
-                    }),
+                TextColumn::make('task_summary')
+                    ->label('Task Summary')
+                    ->view('filament.student.table.task-summary', static function ($record) {
+                        // Get submission for status
+                        $submission = $record->submissions
+                            ->firstWhere('student_id', Auth::user()->id);
 
-                Tables\Columns\TextColumn::make('due_date')
-                    ->label('Due Date')
-                    ->date()
-                    ->sortable()
-                    ->color(function ($state) {
-                        if (!$state) return 'gray';
+                        $status = $submission
+                            ? str_replace('_', ' ', $submission->status)
+                            : str_replace('_', ' ', SubmissionTypes::PENDING_SUBMISSION->value);
 
-                        $daysLeft = now()->diffInDays(Carbon::parse($state), false);
-
-                        return match (true) {
-                            $daysLeft < 0 => 'danger',      // Past due
-                            $daysLeft == 0 => 'danger',     // Due today
-                            $daysLeft <= 3 => 'warning',   // Due in 1-3 days
-                            default => 'success'            // Due in more than 3 days
-                        };
-                    }),
-                Tables\Columns\TextColumn::make('submission.status')
-                    ->label('Status')
-                    ->badge()
-                    ->state(function ($record) {
-                        return $record->submissions
-                            ->firstWhere('student_id', Auth::user()->id)
-                            ?->status ?? SubmissionTypes::PENDING_SUBMISSION->value;
-                    })
-                    ->color(function ($state) {
-                        return match ($state) {
+                        $statusColor = match ($submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value) {
                             SubmissionTypes::PENDING_REVIEW->value => 'gray',
                             SubmissionTypes::UNDER_REVIEW->value => 'info',
                             SubmissionTypes::NEEDS_REVISION->value => 'warning',
@@ -110,8 +87,33 @@ class TaskResource extends Resource
                             SubmissionTypes::FLAGGED->value => 'danger',
                             default => 'danger',
                         };
-                    })
-                    ->formatStateUsing(fn($state) => str($state)->title()),
+
+                        // Calculate due date info
+                        $dueDateText = $record->due_date
+                            ? Carbon::parse($record->due_date)->format('M d, Y')
+                            : 'No due date';
+
+                        $dueDateColor = 'gray';
+                        if ($record->due_date) {
+                            $daysLeft = now()->diffInDays(Carbon::parse($record->due_date), false);
+                            $dueDateColor = match (true) {
+                                $daysLeft < 0 => 'danger',      // Past due
+                                $daysLeft == 0 => 'danger',     // Due today
+                                $daysLeft <= 3 => 'warning',   // Due in 1-3 days
+                                default => 'success'            // Due in more than 3 days
+                            };
+                        }
+
+                        return [
+                            'title' => strlen($record->title) > 25 ? substr($record->title, 0, 25) . '...' : $record->title,
+                            'fullTitle' => $record->title,
+                            'section' => $record->section?->name,
+                            'dueDateText' => $dueDateText,
+                            'dueDateColor' => $dueDateColor,
+                            'status' => str($status)->title(),
+                            'statusColor' => $statusColor,
+                        ];
+                    }),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -167,13 +169,18 @@ class TaskResource extends Resource
                             ->where('student_id', Auth::id())
                             ->first();
 
+                        $rubrics = $record->rubrics()->active()->ordered()->get();
+//                        dd($submission->review->getRubricsSummary());
                         return view('filament.student.task.task-details', [
                             'task' => $record,
                             'submission' => $submission,
                             'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null,
                             'hasSubmission' => (bool) $submission,
+                            'rubrics' => $rubrics,
+                            'rubricReview' => $submission?->review?->getRubricsSummary(),
 //                            'canSubmit' => !$submission,
 //                            'canResubmit' => $submission && $submission->status !== SubmissionTypes::COMPLETED->value,
+
                         ]);
                     })
                     ->modalActions([
@@ -206,7 +213,24 @@ class TaskResource extends Resource
                     ->label('Submit')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
-                    ->visible(fn($record) => !$record->submissions->contains('student_id', Auth::id()))
+                    ->visible(function ($record) {
+                        $submission = !$record->submissions->contains('student_id', Auth::id());
+
+                        $dueDateValid = !$record->due_date ||
+                            now()->lte(Carbon::parse($record->due_date)->endOfDay());
+
+                        return $submission &&
+                            $dueDateValid;
+                    })
+//                    ->visible(function ($record) {
+//                        !$record->submissions->contains('student_id', Auth::id());
+//                    })
+//                    ->visible(function ($record) {
+//                        return now()->lte(Carbon::parse($record->due_date)->endOfDay());
+//                    })
+//                    ->visible(function ($record) {
+//                        return $record->submissions->isEmpty();
+//                    })
                     ->form([
                         Forms\Components\Wizard::make([
                             Forms\Components\Wizard\Step::make('Upload File')
@@ -216,8 +240,8 @@ class TaskResource extends Resource
                                         ->label('Upload File')
                                         ->acceptedFileTypes([
                                             'application/pdf',
-                                            'application/msword',
-                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+//                                            'application/msword',
+//                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                                         ])
                                         ->maxSize(10240)
                                         ->required()
@@ -225,7 +249,7 @@ class TaskResource extends Resource
                                         ->preserveFilenames()
                                         ->disk(config('filesystems.default'))
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 10MB.'),
+                                        ->helperText('Accepted formats: PDF. Max size: 10MB.'),
 
 
                                     Forms\Components\Textarea::make('notes')
@@ -311,8 +335,8 @@ class TaskResource extends Resource
                                         ->label('Upload New File')
                                         ->acceptedFileTypes([
                                             'application/pdf',
-                                            'application/msword',
-                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+//                                            'application/msword',
+//                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                                         ])
                                         ->maxSize(10240)
                                         ->required()
@@ -320,7 +344,7 @@ class TaskResource extends Resource
                                         ->preserveFilenames()
                                         ->disk('local')
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 10MB.'),
+                                        ->helperText('Accepted formats: PDF. Max size: 10MB.'),
 
                                     Forms\Components\Textarea::make('notes')
                                         ->label('Student Notes (Optional)')

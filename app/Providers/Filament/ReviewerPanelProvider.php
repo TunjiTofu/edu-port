@@ -2,9 +2,12 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Reviewer\Pages\ChangePassword;
 use App\Filament\Reviewer\Resources\ChangePasswordResource;
 use App\Filament\Reviewer\Resources\Widgets\MyReviewsWidget;
 use App\Filament\Reviewer\Resources\Widgets\ReviewerStatsWidget;
+use App\Http\Middleware\EnsureUserIsReviewer;
+use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -21,7 +24,6 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Http\Middleware\EnsureUserIsReviewer;
 
 class ReviewerPanelProvider extends PanelProvider
 {
@@ -38,6 +40,7 @@ class ReviewerPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Reviewer/Pages'), for: 'App\\Filament\\Reviewer\\Pages')
             ->pages([
                 Pages\Dashboard::class,
+                ChangePassword::class,
             ])
 //            ->discoverWidgets(in: app_path('Filament/Reviewer/Widgets'), for: 'App\\Filament\\Reviewer\\Widgets')
             ->widgets([
@@ -55,6 +58,8 @@ class ReviewerPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                ForcePasswordChange::class
+
             ])
             ->authMiddleware([
                 Authenticate::class,

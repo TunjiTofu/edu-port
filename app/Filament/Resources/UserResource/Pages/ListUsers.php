@@ -4,6 +4,8 @@ namespace App\Filament\Resources\UserResource\Pages;
 
 use App\Filament\Resources\UserResource;
 use Filament\Actions;
+use App\Filament\Resources\UserResource\Actions\ImportUsersAction;
+use App\Filament\Resources\UserResource\Actions\DownloadTemplateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListUsers extends ListRecords
@@ -14,6 +16,8 @@ class ListUsers extends ListRecords
     {
         return [
             Actions\CreateAction::make(),
+            DownloadTemplateAction::make(),
+            ImportUsersAction::make(),
         ];
     }
 }
