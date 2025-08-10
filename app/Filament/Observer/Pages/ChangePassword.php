@@ -37,6 +37,7 @@ class ChangePassword extends Page implements HasForms
                 TextInput::make('current_password')
                     ->label('Current Password')
                     ->password()
+                    ->revealable()
                     ->required()
                     ->currentPassword(),
 
@@ -53,6 +54,7 @@ class ChangePassword extends Page implements HasForms
                         ->symbols()
                     )
                     ->different('current_password')
+                    ->revealable()
                     ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                     ->validationMessages([
                         'uncompromised' => 'The password you entered is too common or has been compromised. Please choose a different password.',
@@ -62,6 +64,7 @@ class ChangePassword extends Page implements HasForms
                 TextInput::make('password_confirmation')
                     ->label('Confirm New Password')
                     ->password()
+                    ->revealable()
                     ->required()
                     ->same('password')
                     ->dehydrated(false),
@@ -85,22 +88,25 @@ class ChangePassword extends Page implements HasForms
         $user = Auth::user();
         $user->update([
             'password' => $data['password'],
-            'password_changed_at' => now(),
+            'password_updated_at' => now(),
         ]);
 
         Notification::make()
-            ->title('Password updated successfully')
+            ->title('Password updated successfully!')
+            ->body('You will be redirected to login with your new password.')
             ->success()
+            ->persistent() // Make notification stay longer
             ->send();
 
-        $this->redirect('/observer');
+        // Add JavaScript to redirect after showing a notification
+        $this->dispatch('redirect-after-delay', url: '/observer/login');
     }
 
     public function getTitle(): string
     {
         $user = Auth::user();
 
-        if (!$user->password_changed_at) {
+        if (!$user->password_updated_at) {
             return 'Change Default Password';
         }
 
@@ -109,12 +115,6 @@ class ChangePassword extends Page implements HasForms
 
     public function getHeading(): string
     {
-        $user = Auth::user();
-
-        if (!$user->password_changed_at) {
-            return 'You must change your default password before continuing';
-        }
-
-        return 'Change Password';
+        return '';
     }
 }

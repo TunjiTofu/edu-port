@@ -22,6 +22,20 @@ Route::middleware('auth')->group(function () {
 //    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+
+Route::get('/login', function () {
+    // Redirect to the appropriate login page based on intended URL or default to student
+    $intended = session()->get('url.intended');
+
+    if (str_contains($intended ?? '', '/reviewer')) {
+        return redirect('/reviewer/login');
+    } elseif (str_contains($intended ?? '', '/observer')) {
+        return redirect('/observer/login');
+    } else {
+        return redirect('/student/login');
+    }
+})->name('login');
+
 Route::get('/check-auth', function() {
     return [
         'filament_auth' => \Filament\Facades\Filament::auth()->user(),

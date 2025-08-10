@@ -128,7 +128,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function needsPasswordChange(): bool
     {
-        return is_null($this->password_changed_at);
+        return is_null($this->password_updated_at);
     }
 
     /**
@@ -136,6 +136,6 @@ class User extends Authenticatable implements FilamentUser
      */
     public function markPasswordAsChanged(): void
     {
-        $this->update(['password_changed_at' => now()]);
+        $this->update(['password_updated_at' => now()]);
     }
 }

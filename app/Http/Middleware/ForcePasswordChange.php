@@ -22,17 +22,23 @@ class ForcePasswordChange
             return $next($request);
         }
 
-
-
         // Skip if already on password change page to avoid redirect loop
-        if ($request->routeIs('filament.*.pages.change-password') ||
-            $request->routeIs('filament.*.resources.change-password.*')) {
+        if (str_contains($request->path(), '/change-password')) {
             return $next($request);
         }
 
-
         // Skip for logout requests
-        if ($request->routeIs('filament.*.auth.logout')) {
+        if (str_contains($request->path(), '/logout')) {
+            return $next($request);
+        }
+
+        // Skip for login pages
+        if (str_contains($request->path(), '/login')) {
+            return $next($request);
+        }
+
+        // Skip for API routes and assets
+        if ($request->is('api/*') || $request->is('_*') || $request->is('assets/*')) {
             return $next($request);
         }
 
@@ -40,12 +46,6 @@ class ForcePasswordChange
         $panelId = $this->getPanelId($request);
 
         // Redirect to appropriate change password page based on user role
-//        return match($user->role->name) {
-//            'Student' => redirect()->route('filament.student.pages.change-password'),
-//            'Reviewer' => redirect()->route('filament.reviewer.pages.change-password'),
-//            'Observer' => redirect()->route('filament.observer.pages.change-password'),
-//            default => $next($request)
-//        };
 
         return match($user->role->name) {
             'Student' => redirect('/student/change-password'),
