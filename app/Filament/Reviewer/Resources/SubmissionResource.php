@@ -132,6 +132,7 @@ class SubmissionResource extends Resource
                             Forms\Components\Actions::make([
 
 
+// Replace the preview action in your form with this corrected version:
 
 
                                 Forms\Components\Actions\Action::make('preview')
@@ -145,19 +146,18 @@ class SubmissionResource extends Resource
 
                                         if ($fileExtension === 'pdf') {
                                             $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+                                            $randomId = 'pdf_' . $record->id . '_' . time(); // Avoid ID conflicts
 
                                             return new HtmlString('
-<div class="pdf-preview-container" style="
-    max-height: 70vh;
+<div class="pdf-preview-wrapper" style="
+    width: 100%;
+    height: 70vh;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     background: #f9fafb;
     position: relative;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-" oncontextmenu="return false;">
+    overflow: hidden;
+">
     <!-- Header -->
     <div style="
         padding: 12px 16px;
@@ -166,21 +166,118 @@ class SubmissionResource extends Resource
         border-radius: 8px 8px 0 0;
         font-size: 14px;
         font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 10;
+        position: relative;
     ">
-        📄 ' . htmlspecialchars($record->file_name) . ' | 🔒 PROTECTED CONTENT
+        <span>📄</span>
+        <span>' . htmlspecialchars($record->file_name) . '</span>
+        <span style="margin-left: auto;">🔒 PROTECTED</span>
     </div>
 
-    <!-- PDF Embed Container -->
-    <div style="height: calc(70vh - 100px); position: relative; background: white;">
-        <iframe
-            src="' . $pdfUrl . '"
-            style="width:100%;height:100%;border:none;"
-            sandbox="allow-same-origin"
-            title="Secure PDF Preview"
-        ></iframe>
+    <!-- PDF Content Area -->
+    <div style="
+        height: calc(100% - 80px);
+        position: relative;
+        background: white;
+        display: flex;
+        flex-direction: column;
+    ">
+        <!-- Loading Message -->
+        <div id="' . $randomId . '_loading" style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #6b7280;
+            z-index: 5;
+            background: rgba(255,255,255,0.9);
+            padding: 20px;
+            border-radius: 8px;
+        ">
+            <div style="font-size: 24px; margin-bottom: 10px;">📄</div>
+            <div>Loading PDF...</div>
+        </div>
+
+        <!-- PDF Viewer Options -->
+        <div id="' . $randomId . '_viewer" style="width: 100%; height: 100%; position: relative;">
+            <!-- Option 1: Direct embed -->
+            <embed
+                src="' . $pdfUrl . '#toolbar=0&navpanes=0&scrollbar=1&page=1&zoom=page-fit"
+                type="application/pdf"
+                style="width: 100%; height: 100%; border: none; display: block;"
+                onload="handlePdfSuccess_' . $randomId . '()"
+                onerror="handlePdfError_' . $randomId . '()">
+        </div>
+
+        <!-- Error/Alternative Options -->
+        <div id="' . $randomId . '_error" style="
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            max-width: 400px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        ">
+            <div style="font-size: 24px; margin-bottom: 10px;">📄</div>
+            <div style="font-weight: bold; margin-bottom: 10px; color: #374151;">
+                PDF Preview Not Available
+            </div>
+            <div style="font-size: 14px; margin-bottom: 15px; color: #6b7280;">
+                Your browser settings prevent PDF preview. Use the options below:
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                <a
+                    href="' . $pdfUrl . '"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style="
+                        padding: 10px 16px;
+                        background: #3b82f6;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-weight: 500;
+                        display: inline-block;
+                        transition: background-color 0.2s;
+                    "
+                    onmouseover="this.style.backgroundColor=\'#2563eb\'"
+                    onmouseout="this.style.backgroundColor=\'#3b82f6\'"
+                >
+                    📖 Open in New Tab
+                </a>
+                <a
+                    href="' . $pdfUrl . '?download=1"
+                    style="
+                        padding: 10px 16px;
+                        background: #059669;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-weight: 500;
+                        display: inline-block;
+                        transition: background-color 0.2s;
+                    "
+                    onmouseover="this.style.backgroundColor=\'#047857\'"
+                    onmouseout="this.style.backgroundColor=\'#059669\'"
+                >
+                    📥 Download PDF
+                </a>
+            </div>
+        </div>
     </div>
 
-    <!-- Footer notice -->
+    <!-- Footer -->
     <div style="
         padding: 8px 16px;
         background: #f3f4f6;
@@ -189,58 +286,100 @@ class SubmissionResource extends Resource
         color: #6b7280;
         text-align: center;
         border-top: 1px solid #e5e7eb;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 10;
     ">
-        🔒 Protected document - Copying content is disabled
+        🔒 Protected document - Right-click disabled
     </div>
 </div>
 
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        const container = document.querySelector(".pdf-preview-container");
+// Use a closure to avoid global namespace pollution
+(function() {
+    const loadingEl = document.getElementById("' . $randomId . '_loading");
+    const errorEl = document.getElementById("' . $randomId . '_error");
+    const viewerEl = document.getElementById("' . $randomId . '_viewer");
 
-        // Disable right-click
-        container.addEventListener("contextmenu", e => e.preventDefault());
+    // Simple timeout to hide loading after a reasonable time
+    const loadingTimeout = setTimeout(function() {
+        if (loadingEl && loadingEl.style.display !== "none") {
+            loadingEl.style.display = "none";
+        }
+    }, 3000);
 
-        // Disable keyboard shortcuts
-        document.addEventListener("keydown", e => {
-            if (e.ctrlKey && (e.key === "c" || e.key === "s" || e.key === "p")) e.preventDefault();
-            if (e.key === "F12") e.preventDefault();
-        });
+    // Success handler - PDF loaded successfully
+    window["handlePdfSuccess_' . $randomId . '"] = function() {
+        clearTimeout(loadingTimeout);
+        if (loadingEl) loadingEl.style.display = "none";
+        if (errorEl) errorEl.style.display = "none";
+    };
 
-        // Add additional security for iframe
-        const iframe = container.querySelector("iframe");
-        iframe.addEventListener("load", function() {
-            try {
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    // Error handler - PDF failed to load
+    window["handlePdfError_' . $randomId . '"] = function() {
+        clearTimeout(loadingTimeout);
+        if (loadingEl) loadingEl.style.display = "none";
+        if (errorEl) errorEl.style.display = "block";
+    };
 
-                // Disable text selection
-                iframeDoc.addEventListener("selectstart", e => e.preventDefault());
-
-                // Add watermark
-                const watermark = iframeDoc.createElement("div");
-                watermark.style.cssText = `
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    pointer-events: none;
-                    background: repeating-linear-gradient(
-                        45deg,
-                        transparent,
-                        transparent 100px,
-                        rgba(59, 130, 246, 0.03) 100px,
-                        rgba(59, 130, 246, 0.03) 200px
-                    );
-                    z-index: 1000;
-                `;
-                iframeDoc.body.appendChild(watermark);
-            } catch (e) {
-                console.log("Security restrictions prevent full protection");
+    // Additional timeout as fallback
+    setTimeout(function() {
+        // Check if embed element has reasonable dimensions
+        const embed = viewerEl ? viewerEl.querySelector("embed") : null;
+        if (embed) {
+            const rect = embed.getBoundingClientRect();
+            // If embed is too small or has no height, consider it failed
+            if (rect.height < 100) {
+                window["handlePdfError_' . $randomId . '"]();
+            } else {
+                window["handlePdfSuccess_' . $randomId . '"]();
             }
+        } else {
+            window["handlePdfError_' . $randomId . '"]();
+        }
+    }, 4000);
+
+    // Basic security - disable right click on the container
+    const container = document.querySelector(".pdf-preview-wrapper");
+    if (container) {
+        container.addEventListener("contextmenu", function(e) {
+            e.preventDefault();
+            return false;
         });
+    }
+
+    // Disable common keyboard shortcuts
+    document.addEventListener("keydown", function(e) {
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === "s" || e.key === "p" || e.key === "c") {
+                e.preventDefault();
+                return false;
+            }
+        }
     });
+})();
 </script>
+            ');
+                                        } else {
+                                            // Handle other file types
+                                            $content = static::getFileContent($record);
+                                            return new HtmlString('
+<div style="
+    max-height: 60vh;
+    overflow: auto;
+    padding: 16px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Monaco, Consolas, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-size: 14px;
+    line-height: 1.5;
+">' . htmlspecialchars($content) . '</div>
             ');
                                         }
                                     })
@@ -248,6 +387,7 @@ class SubmissionResource extends Resource
                                     ->modalSubmitAction(false)
                                     ->modalCancelActionLabel('Close')
                                     ->closeModalByClickingAway(false),
+
 
 
 
