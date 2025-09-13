@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ProgramEnrollmentStatus;
 use App\Helpers\TrainingProgramHelper;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -105,11 +106,10 @@ class TrainingProgram extends Model
             return false;
         }
 
-        if (now()->isAfter($registrationDeadline)) {
-            return false;
-        }
+        // Ensure we compare with the END of the deadline day
+        $deadline = Carbon::parse($registrationDeadline)->endOfDay();
 
-        return true;
+        return now()->lessThanOrEqualTo($deadline);
     }
 
     /**

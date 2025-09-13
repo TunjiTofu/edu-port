@@ -11,6 +11,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class TrainingProgramResource extends Resource
 {
@@ -55,49 +56,79 @@ class TrainingProgramResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\Layout\Stack::make([
+                    Tables\Columns\Layout\Split::make([
+                        Tables\Columns\ImageColumn::make('image')
+                            ->label('')
+                            ->disk(config('filesystems.default'))
+                            ->visibility('private')
+                            ->circular()
+                            ->size(80)
+                            ->defaultImageUrl('/images/default-program.png')
+                            ->grow(false),
 
-                Tables\Columns\ImageColumn::make('image')
-                    ->label('Image')
-                    ->disk(config('filesystems.default'))
-                    ->visibility('private')
-                    ->circular()
-                    ->size(60)
-                    ->defaultImageUrl('/images/default-program.png'),
+                        Tables\Columns\Layout\Stack::make([
+                            Tables\Columns\TextColumn::make('name')
+                                ->label('')
+                                ->searchable()
+                                ->sortable()
+                                ->weight('bold')
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large),
 
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Program Name')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->description(fn($record) => $record->description),
+                            Tables\Columns\TextColumn::make('description')
+                                ->label('')
+                                ->color('gray')
+                                ->wrap(),
 
-                Tables\Columns\TextColumn::make('sections_count')
-                    ->label('Sections')
-                    ->counts('sections')
-                    ->badge()
-                    ->color('info'),
+                            Tables\Columns\Layout\Grid::make(2)
+                                ->schema([
+                                    Tables\Columns\TextColumn::make('sections_count')
+                                        ->label('Sections')
+                                        ->counts('sections')
+                                        ->badge()
+                                        ->color('info')
+                                        ->formatStateUsing(fn($state) => 'Sections: ' . $state),
 
-                Tables\Columns\TextColumn::make('tasks_count')
-                    ->label('Total Tasks')
-                    ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
-                    ->badge()
-                    ->color('warning'),
+                                    Tables\Columns\TextColumn::make('tasks_count')
+                                        ->label('Total Tasks')
+                                        ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
+                                        ->badge()
+                                        ->color('warning')
+                                        ->formatStateUsing(fn($state) => 'Tasks: ' . $state),
+                                ]),
 
-                Tables\Columns\TextColumn::make('enrollments.enrolled_at')
-                    ->label('Enrolled Date')
-                    ->date()
-                    ->sortable(),
+                            Tables\Columns\TextColumn::make('')
+                                ->label('')
+                                ->formatStateUsing(fn() => '')
+                                ->extraAttributes(['style' => 'height: 8px;']),
 
-                Tables\Columns\TextColumn::make('enrollments.status')
-                    ->label('Status')
-                    ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        ProgramEnrollmentStatus::ACTIVE->value => 'success',
-                        ProgramEnrollmentStatus::COMPLETED->value => 'warning',
-                        ProgramEnrollmentStatus::PAUSED->value => 'danger',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn(string $state): string => str($state)->title())
+                            Tables\Columns\Layout\Grid::make(2)
+                                ->schema([
+                                    Tables\Columns\TextColumn::make('enrollments.enrolled_at')
+                                        ->label('Enrolled Date')
+                                        ->date()
+                                        ->sortable()
+                                        ->icon('heroicon-o-calendar')
+                                        ->formatStateUsing(fn($state) => 'Enrolled: ' . $state),
+
+                                    Tables\Columns\TextColumn::make('enrollments.status')
+                                        ->label('Status')
+                                        ->badge()
+                                        ->color(fn(string $state): string => match ($state) {
+                                            ProgramEnrollmentStatus::ACTIVE->value => 'success',
+                                            ProgramEnrollmentStatus::COMPLETED->value => 'warning',
+                                            ProgramEnrollmentStatus::PAUSED->value => 'danger',
+                                            default => 'gray',
+                                        })
+                                        ->formatStateUsing(fn(string $state): string => 'Status: ' . str($state)->title())
+                                ]),
+                        ])->grow(true),
+                    ])->from('md'),
+                ])->space(3),
+            ])
+            ->contentGrid([
+                'md' => 1,
+                'xl' => 1,
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('enrollment_status')

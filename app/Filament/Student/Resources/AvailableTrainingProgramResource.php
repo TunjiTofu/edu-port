@@ -45,49 +45,87 @@ class AvailableTrainingProgramResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\ImageColumn::make('image')
-                    ->label('Image')
-                    ->disk(config('filesystems.default'))
-                    ->visibility('private')
-                    ->circular()
-                    ->size(60)
-                    ->defaultImageUrl('/images/default-program.png'),
+                Tables\Columns\Layout\Stack::make([
+                    Tables\Columns\Layout\Split::make([
+                        Tables\Columns\ImageColumn::make('image')
+                            ->label('')
+                            ->disk(config('filesystems.default'))
+                            ->visibility('private')
+                            ->circular()
+                            ->size(80)
+                            ->defaultImageUrl('/images/default-program.png')
+                            ->grow(false),
 
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Program Name')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold')
-                    ->description(fn($record) => $record->description),
+                        Tables\Columns\Layout\Stack::make([
+                            Tables\Columns\TextColumn::make('name')
+                                ->label('')
+                                ->searchable()
+                                ->sortable()
+                                ->weight('bold')
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large),
 
-                Tables\Columns\TextColumn::make('sections_count')
-                    ->label('Sections')
-                    ->counts('sections')
-                    ->badge()
-                    ->color('info'),
+                            Tables\Columns\TextColumn::make('description')
+                                ->label('')
+                                ->color('gray')
+                                ->wrap(),
 
-                Tables\Columns\TextColumn::make('tasks_count')
-                    ->label('Total Tasks')
-                    ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
-                    ->badge()
-                    ->color('warning'),
+                            Tables\Columns\Layout\Grid::make(2)
+                                ->schema([
+                                    Tables\Columns\TextColumn::make('sections_count')
+                                        ->label('Sections')
+                                        ->counts('sections')
+                                        ->badge()
+                                        ->color('info')
+                                        ->formatStateUsing(fn($state) => 'Sections: ' . $state),
 
-                Tables\Columns\TextColumn::make('registration_deadline')
-                    ->label('Registration Deadline')
-                    ->date()
-                    ->badge()
-                    ->color(fn($state) => $state && now()->diffInDays($state) <= 7 ? 'danger' : 'info')
-                    ->formatStateUsing(fn($state) => $state ? $state->format('M j, Y') : 'No deadline'),
+                                    Tables\Columns\TextColumn::make('tasks_count')
+                                        ->label('Total Tasks')
+                                        ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
+                                        ->badge()
+                                        ->color('warning')
+                                        ->formatStateUsing(fn($state) => 'Tasks: ' . $state),
+                                ]),
 
-                Tables\Columns\TextColumn::make('start_date')
-                    ->label('Start Date')
-                    ->date()
-                    ->sortable(),
+                            Tables\Columns\TextColumn::make('')
+                                ->label('')
+                                ->formatStateUsing(fn() => '')
+                                ->extraAttributes(['style' => 'height: 8px;']),
 
-                Tables\Columns\TextColumn::make('end_date')
-                    ->label('End Date')
-                    ->date()
-                    ->sortable(),
+                            Tables\Columns\TextColumn::make('registration_deadline')
+                                ->label('Registration Deadline')
+                                ->date()
+                                ->badge()
+                                ->color(fn($state) => $state && now()->diffInDays($state) <= 7 ? 'danger' : 'info')
+                                ->formatStateUsing(fn($state) => $state ? 'Registration Deadline: ' . $state->format('M j, Y') : 'Registration Deadline: No deadline'),
+
+                            Tables\Columns\TextColumn::make('')
+                                ->label('')
+                                ->formatStateUsing(fn() => '')
+                                ->extraAttributes(['style' => 'height: 8px;']),
+
+                            Tables\Columns\Layout\Grid::make(2)
+                                ->schema([
+                                    Tables\Columns\TextColumn::make('start_date')
+                                        ->label('Start Date')
+                                        ->date()
+                                        ->sortable()
+                                        ->icon('heroicon-o-calendar')
+                                        ->formatStateUsing(fn($state) => 'Start Date: ' . $state),
+
+                                    Tables\Columns\TextColumn::make('end_date')
+                                        ->label('End Date')
+                                        ->date()
+                                        ->sortable()
+                                        ->icon('heroicon-o-calendar')
+                                        ->formatStateUsing(fn($state) => 'End Date: ' . $state),
+                                ]),
+                        ])->grow(true),
+                    ])->from('md'),
+                ])->space(3),
+            ])
+            ->contentGrid([
+                'md' => 1,
+                'xl' => 1,
             ])
             ->filters([
                 Tables\Filters\Filter::make('registration_deadline')
@@ -143,15 +181,15 @@ class AvailableTrainingProgramResource extends Resource
                                 return;
                             }
 
-//                            // Check if program is fully enrolled
-//                            if ($record->isFullyEnrolled()) {
-//                                Notification::make()
-//                                    ->title('Program Full')
-//                                    ->body('This program has reached its maximum enrollment capacity.')
-//                                    ->warning()
-//                                    ->send();
-//                                return;
-//                            }
+//                        // Check if program is fully enrolled
+//                        if ($record->isFullyEnrolled()) {
+//                            Notification::make()
+//                                ->title('Program Full')
+//                                ->body('This program has reached its maximum enrollment capacity.')
+//                                ->warning()
+//                                ->send();
+//                            return;
+//                        }
 
                             // Check if already enrolled (safety check)
                             $existingEnrollment = ProgramEnrollment::where('student_id', Auth::user()->id)

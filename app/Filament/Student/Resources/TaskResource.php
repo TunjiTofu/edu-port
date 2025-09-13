@@ -64,56 +64,99 @@ class TaskResource extends Resource
             ]);
     }
 
+
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                TextColumn::make('task_summary')
-                    ->label('Task Summary')
-                    ->view('filament.student.table.task-summary', static function ($record) {
-                        // Get submission for status
-                        $submission = $record->submissions
-                            ->firstWhere('student_id', Auth::user()->id);
+                Tables\Columns\Layout\Stack::make([
+                    Tables\Columns\Layout\Split::make([
+                        Tables\Columns\Layout\Stack::make([
+                            Tables\Columns\TextColumn::make('title')
+                                ->label('')
+                                ->searchable()
+                                ->sortable()
+                                ->weight('bold')
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large)
+                                ->formatStateUsing(function ($state) {
+                                    return strlen($state) > 50 ? substr($state, 0, 50) . '...' : $state;
+                                }),
 
-                        $status = $submission
-                            ? str_replace('_', ' ', $submission->status)
-                            : str_replace('_', ' ', SubmissionTypes::PENDING_SUBMISSION->value);
+                            Tables\Columns\TextColumn::make('section.name')
+                                ->label('')
+                                ->color('gray')
+                                ->formatStateUsing(fn($state) => 'Section: ' . $state),
 
-                        $statusColor = match ($submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value) {
-                            SubmissionTypes::PENDING_REVIEW->value => 'gray',
-                            SubmissionTypes::UNDER_REVIEW->value => 'info',
-                            SubmissionTypes::NEEDS_REVISION->value => 'warning',
-                            SubmissionTypes::COMPLETED->value => 'success',
-                            SubmissionTypes::FLAGGED->value => 'danger',
-                            default => 'danger',
-                        };
+                            Tables\Columns\TextColumn::make('')
+                                ->label('')
+                                ->formatStateUsing(fn() => '')
+                                ->extraAttributes(['style' => 'height: 8px;']),
 
-                        // Calculate due date info
-                        $dueDateText = $record->due_date
-                            ? Carbon::parse($record->due_date)->format('M d, Y')
-                            : 'No due date';
+                            Tables\Columns\TextColumn::make('due_date')
+                                ->label('Due Date')
+                                ->date()
+                                ->badge()
+                                ->color(function ($record) {
+                                    if (!$record->due_date) return 'gray';
 
-                        $dueDateColor = 'gray';
-                        if ($record->due_date) {
-                            $daysLeft = now()->diffInDays(Carbon::parse($record->due_date), false);
-                            $dueDateColor = match (true) {
-                                $daysLeft < 0 => 'danger',      // Past due
-                                $daysLeft == 0 => 'danger',     // Due today
-                                $daysLeft <= 3 => 'warning',   // Due in 1-3 days
-                                default => 'success'            // Due in more than 3 days
-                            };
-                        }
+                                    $daysLeft = now()->diffInDays(Carbon::parse($record->due_date), false);
+                                    return match (true) {
+                                        $daysLeft < 0 => 'danger',      // Past due
+                                        $daysLeft == 0 => 'danger',     // Due today
+                                        $daysLeft <= 3 => 'warning',   // Due in 1-3 days
+                                        default => 'success'            // Due in more than 3 days
+                                    };
+                                })
+                                ->formatStateUsing(function ($record) {
+                                    return $record->due_date
+                                        ? 'Due: ' . Carbon::parse($record->due_date)->format('M d, Y')
+                                        : 'Due: No due date';
+                                }),
 
-                        return [
-                            'title' => strlen($record->title) > 25 ? substr($record->title, 0, 25) . '...' : $record->title,
-                            'fullTitle' => $record->title,
-                            'section' => $record->section?->name,
-                            'dueDateText' => $dueDateText,
-                            'dueDateColor' => $dueDateColor,
-                            'status' => str($status)->title(),
-                            'statusColor' => $statusColor,
-                        ];
-                    }),
+                            Tables\Columns\TextColumn::make('')
+                                ->label('')
+                                ->formatStateUsing(fn() => '')
+                                ->extraAttributes(['style' => 'height: 8px;']),
+
+                            Tables\Columns\TextColumn::make('submission_status')
+                                ->label('Status')
+                                ->badge()
+                                ->getStateUsing(function ($record) {
+                                    $submission = $record->submissions
+                                        ->firstWhere('student_id', Auth::user()->id);
+
+                                    return $submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value;
+                                })
+                                ->color(function ($record) {
+                                    $submission = $record->submissions
+                                        ->firstWhere('student_id', Auth::user()->id);
+
+                                    return match ($submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value) {
+                                        SubmissionTypes::PENDING_REVIEW->value => 'gray',
+                                        SubmissionTypes::UNDER_REVIEW->value => 'info',
+                                        SubmissionTypes::NEEDS_REVISION->value => 'warning',
+                                        SubmissionTypes::COMPLETED->value => 'success',
+                                        SubmissionTypes::FLAGGED->value => 'danger',
+                                        default => 'danger',
+                                    };
+                                })
+                                ->formatStateUsing(function ($record) {
+                                    $submission = $record->submissions
+                                        ->firstWhere('student_id', Auth::user()->id);
+
+                                    $status = $submission
+                                        ? str_replace('_', ' ', $submission->status)
+                                        : str_replace('_', ' ', SubmissionTypes::PENDING_SUBMISSION->value);
+
+                                    return 'Status: ' . str($status)->title();
+                                }),
+                        ])->grow(true),
+                    ])->from('md'),
+                ])->space(3),
+            ])
+            ->contentGrid([
+                'md' => 1,
+                'xl' => 1,
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -222,15 +265,7 @@ class TaskResource extends Resource
                         return $submission &&
                             $dueDateValid;
                     })
-//                    ->visible(function ($record) {
-//                        !$record->submissions->contains('student_id', Auth::id());
-//                    })
-//                    ->visible(function ($record) {
-//                        return now()->lte(Carbon::parse($record->due_date)->endOfDay());
-//                    })
-//                    ->visible(function ($record) {
-//                        return $record->submissions->isEmpty();
-//                    })
+
                     ->form([
                         Forms\Components\Wizard::make([
                             Forms\Components\Wizard\Step::make('Upload File')
@@ -240,8 +275,6 @@ class TaskResource extends Resource
                                         ->label('Upload File')
                                         ->acceptedFileTypes([
                                             'application/pdf',
-//                                            'application/msword',
-//                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                                         ])
                                         ->maxSize(10240)
                                         ->required()
@@ -268,15 +301,15 @@ class TaskResource extends Resource
                                             $notes = $get('notes');
 
                                             return new \Illuminate\Support\HtmlString('
-                                    <div class="text-center p-6">
-                                        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-                                            <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                        </div>
-                                        <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Submit</h3>
+                                <div class="text-center p-6">
+                                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                                        <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
                                     </div>
-                                ');
+                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Submit</h3>
+                                </div>
+                            ');
                                         }),
 
                                     Forms\Components\Checkbox::make('confirm_submission')
@@ -362,15 +395,15 @@ class TaskResource extends Resource
                                             $notes = $get('notes');
 
                                             return new \Illuminate\Support\HtmlString('
-                                    <div class="text-center p-6">
-                                        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
-                                            <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                            </svg>
-                                        </div>
-                                        <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Resubmit</h3>
+                                <div class="text-center p-6">
+                                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
+                                        <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                        </svg>
                                     </div>
-                                ');
+                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Resubmit</h3>
+                                </div>
+                            ');
                                         }),
 
                                     Forms\Components\Checkbox::make('confirm_resubmission')
@@ -476,6 +509,7 @@ class TaskResource extends Resource
             ])
             ->bulkActions([]);
     }
+
 
     public static function getRelations(): array
     {

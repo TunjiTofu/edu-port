@@ -114,7 +114,7 @@ class CsvUserValidationService
 
             if (!$church) {
                 $errors[] = "Church '{$userData['church_name']}' not found";
-            } elseif ($district && $church->district_id !== $district->id) {
+            } elseif ($district && $church->district->id !== $district->id) {
                 $errors[] = "Church '{$userData['church_name']}' does not belong to district '{$userData['district_name']}'";
             }
         }
