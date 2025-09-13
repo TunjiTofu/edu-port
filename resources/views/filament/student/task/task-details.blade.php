@@ -219,7 +219,9 @@
             <div class="flex items-center space-x-3">
                 @if($task->due_date)
                     @php
-                        $daysLeft = number_format(now()->diffInDays(Carbon::parse($task->due_date), false), 0);
+//                        $daysLeft = number_format(now()->diffInDays(Carbon::parse($task->due_date), false), 0);
+                        $dueDate = Carbon::parse($task->due_date)->endOfDay();
+                        $daysLeft = floor(now()->diffInDays($dueDate, false));
                     @endphp
                     @if($daysLeft < 0)
                         <span
@@ -625,19 +627,42 @@
                                 <span class="text-sm font-medium text-gray-700 dark:text-white">Due Date</span>
                             </div>
 
+{{--                            @if($task->due_date)--}}
+{{--                                <div>--}}
+{{--                                    <p class="text-sm text-gray-900 dark:text-gray-100 font-medium">--}}
+{{--                                        {{ Carbon::parse($task->due_date)->format('M j, Y') }}--}}
+{{--                                    </p>--}}
+{{--                                    <p class="text-xs text-gray-500 dark:text-gray-400">--}}
+{{--                                        {{ Carbon::parse($task->due_date)->format('g:i A') }}--}}
+{{--                                    </p>--}}
+
+{{--                                </div>--}}
+{{--                            @else--}}
+{{--                                <p class="text-sm text-gray-500 dark:text-gray-400">No due date set</p>--}}
+{{--                            @endif--}}
+
                             @if($task->due_date)
+                                @php
+                                    $due = Carbon::parse($task->due_date);
+
+                                    // if the time is midnight (default when only a date is stored), assume end of day
+                                    if ($due->isStartOfDay()) {
+                                        $due->endOfDay();
+                                    }
+                                @endphp
+
                                 <div>
                                     <p class="text-sm text-gray-900 dark:text-gray-100 font-medium">
-                                        {{ Carbon::parse($task->due_date)->format('M j, Y') }}
+                                        {{ $due->format('M j, Y') }}
                                     </p>
                                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                                        {{ Carbon::parse($task->due_date)->format('g:i A') }}
+                                        {{ $due->format('g:i A') }}
                                     </p>
-
                                 </div>
                             @else
                                 <p class="text-sm text-gray-500 dark:text-gray-400">No due date set</p>
                             @endif
+
                         </div>
 
                         <!-- Max Score Card -->
