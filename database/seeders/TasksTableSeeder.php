@@ -27,15 +27,15 @@ class TasksTableSeeder extends Seeder
                 'order_index' => 1
             ]);
 
-            Task::create([
-                'title' => 'Case Study Analysis',
-                'description' => 'Real-world scenario analysis',
-                'instructions' => 'Submit your analysis report',
-                'section_id' => $section->id,
-                'max_score' => 6,
-                'due_date' => now()->addWeeks(4),
-                'order_index' => 2
-            ]);
+//            Task::create([
+//                'title' => 'Case Study Analysis',
+//                'description' => 'Real-world scenario analysis',
+//                'instructions' => 'Submit your analysis report',
+//                'section_id' => $section->id,
+//                'max_score' => 6,
+//                'due_date' => now()->addWeeks(4),
+//                'order_index' => 2
+//            ]);
         }
     }
 }

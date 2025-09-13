@@ -5,6 +5,9 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Enums\RoleTypes;
+use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,9 +15,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, SoftDeletes;
 
     /**
@@ -44,7 +47,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
+            'password_updated_at' => 'datetime',
         ];
     }
 
@@ -52,7 +56,7 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Role::class);
     }
-    
+
     public function district() : BelongsTo
     {
         return $this->belongsTo(District::class);
@@ -79,22 +83,22 @@ class User extends Authenticatable
         return $this->hasMany(ProgramEnrollment::class, 'student_id');
     }
 
-    public function isStudent() : bool 
+    public function isStudent() : bool
     {
         return $this->role->name === RoleTypes::STUDENT->value;
     }
 
-    public function isReviewer() : bool 
+    public function isReviewer() : bool
     {
         return $this->role->name === RoleTypes::REVIEWER->value;
     }
 
-    public function isAdmin() : bool 
+    public function isAdmin() : bool
     {
         return $this->role->name === RoleTypes::ADMIN->value;
     }
 
-    public function isObserver() : bool 
+    public function isObserver() : bool
     {
         return $this->role->name === RoleTypes::OBSERVER->value;
     }
@@ -102,5 +106,36 @@ class User extends Authenticatable
     public function hasPermission(string $permission): bool
     {
         return $this->role->hasPermission($permission);
+    }
+
+    public function reviewsAsReviewer()
+    {
+        return $this->hasMany(Review::class, 'reviewer_id');
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $this->isAdmin() || $this->isReviewer() || $this->isObserver() || $this->isStudent();
+    }
+
+    public function canAccessFilament(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Check if user needs to change their password
+     */
+    public function needsPasswordChange(): bool
+    {
+        return is_null($this->password_updated_at);
+    }
+
+    /**
+     * Mark password as changed
+     */
+    public function markPasswordAsChanged(): void
+    {
+        $this->update(['password_updated_at' => now()]);
     }
 }

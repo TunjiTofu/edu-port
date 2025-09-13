@@ -21,11 +21,14 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Components\TextEntry;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry as ComponentsTextEntry;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class SubmissionResource extends Resource
 {
@@ -183,7 +186,7 @@ class SubmissionResource extends Resource
 
                         Forms\Components\DateTimePicker::make('reviewed_at')
                             ->label('Reviewed At')
-                            ->formatStateUsing(fn($record) => $record->review->reviewed_at?->format('Y-m-d H:i:s') ?? 'N/A')
+                            ->formatStateUsing(fn($record) => $record->review?->reviewed_at?->format('Y-m-d H:i:s') ?? 'N/A')
                             ->disabled(),
                     ])->columns(2),
 
@@ -192,7 +195,7 @@ class SubmissionResource extends Resource
                         Forms\Components\Toggle::make('review.admin_override')
                             ->label('Admin Override?')
                             ->reactive()
-                            ->formatStateUsing(fn($record) => $record->review->admin_override ?? false)
+                            ->formatStateUsing(fn($record) => $record->review?->admin_override ?? false)
                             ->helperText('Override the reviewer\'s decision')
                             ->disabled(),
 
@@ -202,7 +205,7 @@ class SubmissionResource extends Resource
                             ->default(Auth::user()->id)
                             ->searchable()
                             ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review->overridden_by ?? Auth::user()->id)
+                            ->formatStateUsing(fn($record) => $record->review?->overridden_by ?? Auth::user()->id)
                             ->visible(fn($get) => $get('review.admin_override'))
                             ->disabled(),
 
@@ -210,7 +213,7 @@ class SubmissionResource extends Resource
                             ->label('Override Date')
                             // ->default(now())
                             ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review->overridden_at ? Carbon::parse($record->review->overridden_at)->format('Y-m-d H:i:s') : now()?->format('Y-m-d H:i:s'))
+                            ->formatStateUsing(fn($record) => $record->review?->overridden_at ? Carbon::parse($record->review->overridden_at)->format('Y-m-d H:i:s') : now()?->format('Y-m-d H:i:s'))
                             ->visible(fn($get) => $get('review.admin_override'))
                             ->disabled(),
 
@@ -218,7 +221,7 @@ class SubmissionResource extends Resource
                             ->label('Override Reason')
                             ->rows(3)
                             ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review->override_reason ?? '')
+                            ->formatStateUsing(fn($record) => $record->review?->override_reason ?? '')
                             ->visible(fn($get) => $get('review.admin_override'))
                             ->disabled()
                             ->helperText('Explain why this override is necessary')
@@ -416,7 +419,11 @@ class SubmissionResource extends Resource
                     ->label('Download')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('primary')
-                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
+                    ->url(function (Submission $record) {
+                        return $record ? static::getDownloadUrl($record) : null;
+                    })
+//                    ->openUrlInNewTab(),
+//                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
                     ->openUrlInNewTab(),
                 // ->visible(fn(Submission $record) => $record->file_path. '/' . $record->file_name && file_exists(public_path($record->file_path . '/' . $record->file_name))),
 
@@ -456,9 +463,12 @@ class SubmissionResource extends Resource
                             ->success()
                             ->send();
                     })
+//                    ->visible(function (Submission $record) {
+//                        return !$record->reviewer_id &&
+//                            $record->status === SubmissionTypes::PENDING_REVIEW->value;
+//                    }),
                     ->visible(function (Submission $record) {
-                        return !$record->reviewer_id &&
-                            $record->status === SubmissionTypes::PENDING_REVIEW->value;
+                        return $record->status !== SubmissionTypes::COMPLETED->value;
                     }),
 
                 Tables\Actions\Action::make('override_score')
@@ -513,6 +523,146 @@ class SubmissionResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                     // Tables\Actions\ForceDeleteBulkAction::make(),
                     Tables\Actions\RestoreBulkAction::make(),
+                    Tables\Actions\BulkAction::make('auto_assign_reviewers')
+                        ->label('Auto Assign Reviewers')
+                        ->icon('heroicon-o-users')
+                        ->color('success')
+                        ->form([
+                            Forms\Components\Select::make('assignment_strategy')
+                                ->label('Assignment Strategy')
+                                ->options([
+                                    \App\Services\ReviewerAssignmentService::STRATEGY_BALANCED => 'Balanced Load (Least assignments first)',
+                                    \App\Services\ReviewerAssignmentService::STRATEGY_ROUND_ROBIN => 'Round Robin (Equal distribution)',
+                                    \App\Services\ReviewerAssignmentService::STRATEGY_RANDOM => 'Random Assignment',
+                                ])
+                                ->default(\App\Services\ReviewerAssignmentService::STRATEGY_BALANCED)
+                                ->required()
+                                ->helperText('Choose how reviewers should be selected for assignment'),
+
+                            Forms\Components\Toggle::make('exclude_same_church')
+                                ->label('Exclude Same Church/District')
+                                ->default(true)
+                                ->helperText('Prevent assigning reviewers from same church or district as student'),
+
+                            Forms\Components\Toggle::make('only_active_reviewers')
+                                ->label('Only Active Reviewers')
+                                ->default(true)
+                                ->helperText('Only assign to active reviewers'),
+
+                            Forms\Components\Textarea::make('assignment_notes')
+                                ->label('Assignment Notes (Optional)')
+                                ->placeholder('Add any notes about this batch assignment...')
+                                ->rows(2),
+                        ])
+                        ->action(function (Collection $records, array $data) {
+                            if ($records->isEmpty()) {
+                                Notification::make()
+                                    ->title('No submissions selected')
+                                    ->body('Please select at least one submission to assign reviewers.')
+                                    ->warning()
+                                    ->send();
+                                return;
+                            }
+
+                            $assignmentService = new \App\Services\ReviewerAssignmentService();
+
+                            $eligibleSubmissions = $records->filter(function ($submission) {
+                                return $submission->status === SubmissionTypes::PENDING_REVIEW->value &&
+                                    $submission->review === null;
+                            });
+
+                            if ($eligibleSubmissions->isEmpty()) {
+                                Notification::make()
+                                    ->title('No eligible submissions')
+                                    ->body('All selected submissions already have reviewers assigned or are not in pending status.')
+                                    ->warning()
+                                    ->send();
+                                return;
+                            }
+
+                            $results = $assignmentService->assignReviewersToSubmissions(
+                                $eligibleSubmissions,
+                                $data['assignment_strategy'],
+                                $data['exclude_same_church'],
+                                $data['only_active_reviewers']
+                            );
+
+
+                            $message = "Successfully assigned {$results['assigned']} submissions to reviewers.";
+
+                            if (!empty($results['errors'])) {
+                                $message .= " " . count($results['errors']) . " assignments failed.";
+
+                                // Show first few errors in the notification
+                                if (count($results['errors']) <= 3) {
+                                    $message .= "\n\nErrors:\n• " . implode("\n• ", $results['errors']);
+                                } else {
+                                    $message .= "\n\nFirst 3 errors:\n• " . implode("\n• ", array_slice($results['errors'], 0, 3));
+                                    $message .= "\n• ... and " . (count($results['errors']) - 3) . " more errors";
+                                }
+                            }
+
+                            // Create detailed message for successful assignments
+                            if (!empty($results['assignments'])) {
+                                $assignmentDetails = "\n\nAssignments made:";
+                                $displayLimit = min(10, count($results['assignments']));
+
+                                foreach (array_slice($results['assignments'], 0, $displayLimit) as $assignment) {
+                                    $assignmentDetails .= "\n• Submission {$assignment['submission_id']} → {$assignment['reviewer_name']}";
+                                }
+
+                                if (count($results['assignments']) > $displayLimit) {
+                                    $assignmentDetails .= "\n• ... and " . (count($results['assignments']) - $displayLimit) . " more assignments";
+                                }
+
+                                $message .= $assignmentDetails;
+                            }
+
+                            // Determine notification color based on results
+                            $notificationColor = match (true) {
+                                $results['assigned'] > 0 && empty($results['errors']) => 'success',
+                                $results['assigned'] > 0 && !empty($results['errors']) => 'warning',
+                                default => 'danger'
+                            };
+
+                            Notification::make()
+                                ->title('Reviewer Assignment Complete')
+                                ->body($message)
+                                ->color($notificationColor)
+                                ->duration(15000) // Show for 15 seconds due to detailed info
+                                ->send();
+
+                            // Log the assignment activity
+                            Log::info("Bulk reviewer assignment completed", [
+                                'assigned_count' => $results['assigned'],
+                                'total_selected' => $records->count(),
+                                'strategy' => $data['assignment_strategy'],
+                                'exclude_same_church' => $data['exclude_same_church'],
+                                'only_active_reviewers' => $data['only_active_reviewers'],
+                                'error_count' => count($results['errors']),
+                                'errors' => $results['errors'],
+                                'assignments' => $results['assignments'],
+                                'admin_id' => Auth::id(),
+                                'notes' => $data['assignment_notes'] ?? '',
+                                'timestamp' => now()->toISOString()
+                            ]);
+                        })
+                        ->requiresConfirmation()
+                        ->modalHeading('Auto Assign Reviewers')
+                        ->modalDescription('This will automatically assign reviewers to selected submissions based on current workload and assignment strategy.')
+                        ->modalSubmitActionLabel('Assign Reviewers')
+                        ->deselectRecordsAfterCompletion()
+                        ->visible(function (): bool {
+                            // Remove the collection check from visibility since it can cause issues
+                            return true;
+                        }),
+//                        ->visible(function (Collection $records) {
+//                            // Only show if there are submissions that need assignment
+//                            return $records->filter(function ($submission) {
+//                                return $submission->status === SubmissionTypes::PENDING_REVIEW->value &&
+//                                    !$submission->review?->reviewer_id;
+//                            })->isNotEmpty();
+//                        }),
                 ]),
             ]);
         // ->defaultSort('submitted_at', 'desc');
@@ -542,5 +692,31 @@ class SubmissionResource extends Resource
                 SoftDeletingScope::class,
             ])
             ->with(['student', 'task.section', 'review.reviewer']);
+    }
+
+    protected static function getDownloadUrl(Submission $submission): ?string
+    {
+        try {
+            $fullPath = $submission->file_path.'/'.$submission->file_name;
+
+            // Check if file exists first
+            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
+                Log::error("File not found at path: {$fullPath}");
+                return null;
+            }
+
+            // Generate temporary URL with proper expiration
+            return Storage::disk(config('filesystems.default'))
+                ->temporaryUrl(
+                    $fullPath,
+                    now()->addMinutes(30),
+                    [
+                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
+                    ]
+                );
+        } catch (\Exception $e) {
+            Log::error("Failed to generate download URL: ".$e->getMessage());
+            return null;
+        }
     }
 }

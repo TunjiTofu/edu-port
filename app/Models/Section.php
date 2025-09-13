@@ -6,13 +6,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Section extends Model
 {
     use HasFactory;
     use SoftDeletes;
-    
+
     protected $guarded = ['id'];
 
     /**
@@ -30,7 +31,7 @@ class Section extends Model
     /**
      * Get the training program that owns the section.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function trainingProgram(): BelongsTo
     {
@@ -40,9 +41,9 @@ class Section extends Model
     /**
      * Get the tasks associated with the section.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
-    public function tasks()
+    public function tasks(): HasMany
     {
         return $this->hasMany(Task::class)->orderBy('order_index');
     }
@@ -50,7 +51,7 @@ class Section extends Model
     /**
      * Get the students enrolled in the section.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany
      */
     public function students(): BelongsToMany
     {

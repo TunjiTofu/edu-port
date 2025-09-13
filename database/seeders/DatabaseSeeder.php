@@ -22,10 +22,10 @@ class DatabaseSeeder extends Seeder
             SectionsTableSeeder::class,
             TasksTableSeeder::class,
             ProgramEnrollmentsTableSeeder::class,
-            SubmissionsTableSeeder::class,
-            ReviewsTableSeeder::class,
+//            SubmissionsTableSeeder::class,
+//            ReviewsTableSeeder::class,
             // SimilarityChecksTableSeeder::class,
-            ResultPublicationsTableSeeder::class,
+//            ResultPublicationsTableSeeder::class,
         ]);
     }
 }
