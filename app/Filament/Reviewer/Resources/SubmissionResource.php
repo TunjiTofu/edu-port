@@ -135,6 +135,259 @@ class SubmissionResource extends Resource
 // Replace the preview action in your form with this corrected version:
 
 
+//                                Forms\Components\Actions\Action::make('preview')
+//                                    ->label('Preview File')
+//                                    ->icon('heroicon-o-eye')
+//                                    ->color('primary')
+//                                    ->modalHeading('File Preview - Protected Content')
+//                                    ->modalDescription('This content is protected from copying, printing, and downloading.')
+//                                    ->modalContent(function (Submission $record) {
+//                                        $fileExtension = strtolower(pathinfo($record->file_name, PATHINFO_EXTENSION));
+//
+//                                        if ($fileExtension === 'pdf') {
+//                                            $pdfUrl = route('reviewer.submissions.file', ['submission' => $record]);
+//                                            $randomId = 'pdf_' . $record->id . '_' . time(); // Avoid ID conflicts
+//
+//                                            return new HtmlString('
+//<div class="pdf-preview-wrapper" style="
+//    width: 100%;
+//    height: 70vh;
+//    border: 1px solid #e5e7eb;
+//    border-radius: 8px;
+//    background: #f9fafb;
+//    position: relative;
+//    overflow: hidden;
+//">
+//    <!-- Header -->
+//    <div style="
+//        padding: 12px 16px;
+//        background: #3b82f6;
+//        color: white;
+//        border-radius: 8px 8px 0 0;
+//        font-size: 14px;
+//        font-weight: 600;
+//        display: flex;
+//        align-items: center;
+//        gap: 8px;
+//        z-index: 10;
+//        position: relative;
+//    ">
+//        <span>📄</span>
+//        <span>' . htmlspecialchars($record->file_name) . '</span>
+//        <span style="margin-left: auto;">🔒 PROTECTED</span>
+//    </div>
+//
+//    <!-- PDF Content Area -->
+//    <div style="
+//        height: calc(100% - 80px);
+//        position: relative;
+//        background: white;
+//        display: flex;
+//        flex-direction: column;
+//    ">
+//        <!-- Loading Message -->
+//        <!-- <div id="' . $randomId . '_loading" style="
+//            position: absolute;
+//            top: 50%;
+//            left: 50%;
+//            transform: translate(-50%, -50%);
+//            text-align: center;
+//            color: #6b7280;
+//            z-index: 5;
+//            background: rgba(255,255,255,0.9);
+//            padding: 20px;
+//            border-radius: 8px;
+//        ">
+//            <div style="font-size: 24px; margin-bottom: 10px;">📄</div>
+//            <div>Loading PDF...</div>
+//        </div>
+//-->
+//        <!-- PDF Viewer Options -->
+//        <div id="' . $randomId . '_viewer" style="width: 100%; height: 100%; position: relative;">
+//            <!-- Option 1: Direct embed -->
+//            <embed
+//                src="' . $pdfUrl . '#toolbar=0&navpanes=0&scrollbar=1&page=1&zoom=page-fit"
+//                type="application/pdf"
+//                style="width: 100%; height: 100%; border: none; display: block;"
+//                onload="handlePdfSuccess_' . $randomId . '()"
+//                onerror="handlePdfError_' . $randomId . '()">
+//        </div>
+//
+//        <!-- Error/Alternative Options -->
+//        <div id="' . $randomId . '_error" style="
+//            display: none;
+//            position: absolute;
+//            top: 50%;
+//            left: 50%;
+//            transform: translate(-50%, -50%);
+//            text-align: center;
+//            max-width: 400px;
+//            background: white;
+//            padding: 20px;
+//            border-radius: 8px;
+//            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+//        ">
+//            <div style="font-size: 24px; margin-bottom: 10px;">📄</div>
+//            <div style="font-weight: bold; margin-bottom: 10px; color: #374151;">
+//                PDF Preview Not Available
+//            </div>
+//            <div style="font-size: 14px; margin-bottom: 15px; color: #6b7280;">
+//                Your browser settings prevent PDF preview. Use the options below:
+//            </div>
+//            <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+//                <a
+//                    href="' . $pdfUrl . '"
+//                    target="_blank"
+//                    rel="noopener noreferrer"
+//                    style="
+//                        padding: 10px 16px;
+//                        background: #3b82f6;
+//                        color: white;
+//                        text-decoration: none;
+//                        border-radius: 6px;
+//                        font-size: 14px;
+//                        font-weight: 500;
+//                        display: inline-block;
+//                        transition: background-color 0.2s;
+//                    "
+//                    onmouseover="this.style.backgroundColor=\'#2563eb\'"
+//                    onmouseout="this.style.backgroundColor=\'#3b82f6\'"
+//                >
+//                    📖 Open in New Tab
+//                </a>
+//                <a
+//                    href="' . $pdfUrl . '?download=1"
+//                    style="
+//                        padding: 10px 16px;
+//                        background: #059669;
+//                        color: white;
+//                        text-decoration: none;
+//                        border-radius: 6px;
+//                        font-size: 14px;
+//                        font-weight: 500;
+//                        display: inline-block;
+//                        transition: background-color 0.2s;
+//                    "
+//                    onmouseover="this.style.backgroundColor=\'#047857\'"
+//                    onmouseout="this.style.backgroundColor=\'#059669\'"
+//                >
+//                    📥 Download PDF
+//                </a>
+//            </div>
+//        </div>
+//    </div>
+//
+//    <!-- Footer -->
+//    <div style="
+//        padding: 8px 16px;
+//        background: #f3f4f6;
+//        border-radius: 0 0 8px 8px;
+//        font-size: 12px;
+//        color: #6b7280;
+//        text-align: center;
+//        border-top: 1px solid #e5e7eb;
+//        height: 32px;
+//        display: flex;
+//        align-items: center;
+//        justify-content: center;
+//        position: relative;
+//        z-index: 10;
+//    ">
+//        🔒 Protected document - Right-click disabled
+//    </div>
+//</div>
+//
+//<script>
+//// Use a closure to avoid global namespace pollution
+//(function() {
+//    const loadingEl = document.getElementById("' . $randomId . '_loading");
+//    const errorEl = document.getElementById("' . $randomId . '_error");
+//    const viewerEl = document.getElementById("' . $randomId . '_viewer");
+//
+//    // Simple timeout to hide loading after a reasonable time
+//    const loadingTimeout = setTimeout(function() {
+//        if (loadingEl && loadingEl.style.display !== "none") {
+//            loadingEl.style.display = "none";
+//        }
+//    }, 3000);
+//
+//    // Success handler - PDF loaded successfully
+//    window["handlePdfSuccess_' . $randomId . '"] = function() {
+//        clearTimeout(loadingTimeout);
+//        if (loadingEl) loadingEl.style.display = "none";
+//        if (errorEl) errorEl.style.display = "none";
+//    };
+//
+//    // Error handler - PDF failed to load
+//    window["handlePdfError_' . $randomId . '"] = function() {
+//        clearTimeout(loadingTimeout);
+//        if (loadingEl) loadingEl.style.display = "none";
+//        if (errorEl) errorEl.style.display = "block";
+//    };
+//
+//    // Additional timeout as fallback
+//    setTimeout(function() {
+//        // Check if embed element has reasonable dimensions
+//        const embed = viewerEl ? viewerEl.querySelector("embed") : null;
+//        if (embed) {
+//            const rect = embed.getBoundingClientRect();
+//            // If embed is too small or has no height, consider it failed
+//            if (rect.height < 100) {
+//                window["handlePdfError_' . $randomId . '"]();
+//            } else {
+//                window["handlePdfSuccess_' . $randomId . '"]();
+//            }
+//        } else {
+//            window["handlePdfError_' . $randomId . '"]();
+//        }
+//    }, 4000);
+//
+//    // Basic security - disable right click on the container
+//    const container = document.querySelector(".pdf-preview-wrapper");
+//    if (container) {
+//        container.addEventListener("contextmenu", function(e) {
+//            e.preventDefault();
+//            return false;
+//        });
+//    }
+//
+//    // Disable common keyboard shortcuts
+//    document.addEventListener("keydown", function(e) {
+//        if (e.ctrlKey || e.metaKey) {
+//            if (e.key === "s" || e.key === "p" || e.key === "c") {
+//                e.preventDefault();
+//                return false;
+//            }
+//        }
+//    });
+//})();
+//</script>
+//            ');
+//                                        } else {
+//                                            // Handle other file types
+//                                            $content = static::getFileContent($record);
+//                                            return new HtmlString('
+//<div style="
+//    max-height: 60vh;
+//    overflow: auto;
+//    padding: 16px;
+//    background: #f9fafb;
+//    border: 1px solid #e5e7eb;
+//    border-radius: 8px;
+//    font-family: ui-monospace, SFMono-Regular, Monaco, Consolas, monospace;
+//    white-space: pre-wrap;
+//    word-break: break-all;
+//    font-size: 14px;
+//    line-height: 1.5;
+//">' . htmlspecialchars($content) . '</div>
+//            ');
+//                                        }
+//                                    })
+//                                    ->modalWidth('7xl')
+//                                    ->modalSubmitAction(false)
+//                                    ->modalCancelActionLabel('Close')
+//                                    ->closeModalByClickingAway(false),
+
                                 Forms\Components\Actions\Action::make('preview')
                                     ->label('Preview File')
                                     ->icon('heroicon-o-eye')
@@ -151,7 +404,8 @@ class SubmissionResource extends Resource
                                             return new HtmlString('
 <div class="pdf-preview-wrapper" style="
     width: 100%;
-    height: 70vh;
+    height: 85vh;
+    min-height: 700px;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     background: #f9fafb;
@@ -185,23 +439,6 @@ class SubmissionResource extends Resource
         display: flex;
         flex-direction: column;
     ">
-        <!-- Loading Message -->
-        <div id="' . $randomId . '_loading" style="
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #6b7280;
-            z-index: 5;
-            background: rgba(255,255,255,0.9);
-            padding: 20px;
-            border-radius: 8px;
-        ">
-            <div style="font-size: 24px; margin-bottom: 10px;">📄</div>
-            <div>Loading PDF...</div>
-        </div>
-
         <!-- PDF Viewer Options -->
         <div id="' . $randomId . '_viewer" style="width: 100%; height: 100%; position: relative;">
             <!-- Option 1: Direct embed -->
@@ -304,23 +541,14 @@ class SubmissionResource extends Resource
     const errorEl = document.getElementById("' . $randomId . '_error");
     const viewerEl = document.getElementById("' . $randomId . '_viewer");
 
-    // Simple timeout to hide loading after a reasonable time
-    const loadingTimeout = setTimeout(function() {
-        if (loadingEl && loadingEl.style.display !== "none") {
-            loadingEl.style.display = "none";
-        }
-    }, 3000);
-
     // Success handler - PDF loaded successfully
     window["handlePdfSuccess_' . $randomId . '"] = function() {
-        clearTimeout(loadingTimeout);
         if (loadingEl) loadingEl.style.display = "none";
         if (errorEl) errorEl.style.display = "none";
     };
 
     // Error handler - PDF failed to load
     window["handlePdfError_' . $randomId . '"] = function() {
-        clearTimeout(loadingTimeout);
         if (loadingEl) loadingEl.style.display = "none";
         if (errorEl) errorEl.style.display = "block";
     };
@@ -364,11 +592,12 @@ class SubmissionResource extends Resource
 </script>
             ');
                                         } else {
-                                            // Handle other file types
+                                            // Handle other file types with increased height
                                             $content = static::getFileContent($record);
                                             return new HtmlString('
 <div style="
-    max-height: 60vh;
+    height: 75vh;
+    min-height: 600px;
     overflow: auto;
     padding: 16px;
     background: #f9fafb;
