@@ -5,18 +5,14 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ResultPublicationResource\Pages;
 use App\Models\ResultPublication;
 use App\Models\Task;
-use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
-use Filament\Forms\Components\Actions\Action;
-use Filament\Support\Enums\ActionSize;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 
@@ -49,18 +45,17 @@ class ResultPublicationResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('task_id')
                             ->label('Task')
-                            ->relationship('task', 'title')
+                            ->relationship(
+                                name: 'task',
+                                titleAttribute: 'title',
+                                modifyQueryUsing: fn (Builder $query) => $query->whereHas('resultPublication', function (Builder $query) {
+                                    $query->where('is_published', false);
+                                })->orWhereDoesntHave('resultPublication')
+                            )
+//                            ->relationship('task', 'title')
                             ->searchable()
                             ->preload()
                             ->required()
-//                            ->createOptionForm([
-//                                Forms\Components\TextInput::make('title')
-//                                    ->required()
-//                                    ->maxLength(255),
-//                                Forms\Components\Textarea::make('description')
-//                                    ->maxLength(65535)
-//                                    ->columnSpanFull(),
-//                            ])
                             ->helperText('Select the task for which you want to create a result publication.')
                             ->live()
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
