@@ -27,7 +27,6 @@ class ManageStudentSubmissions extends Page implements HasTable
 
     protected static string $resource = StudentSubmissionsResource::class;
 
-//    protected static string $view = 'filament.resources.student-submissions-resource.pages.manage-student-submissions';
     protected static string $view = 'filament.student.pages.manage-student-submissions';
 
     public User $record;
@@ -36,19 +35,12 @@ class ManageStudentSubmissions extends Page implements HasTable
 
     public function mount(User $record): void
     {
-        // Load the user with all relationships
         $this->record = $record->load([
             'submissions.task.section',
             'submissions.review.reviewer',
             'church',
             'district'
         ]);
-
-        // Verify this is a student
-//        if ($this->record->role_id !== Constants::STUDENT_ID) {
-//            abort(404, 'Student not found');
-//        }
-
     }
 
     public function getTitle(): string
@@ -101,15 +93,12 @@ class ManageStudentSubmissions extends Page implements HasTable
                     ->searchable()
                     ->sortable()
                     ->weight(FontWeight::Medium)
-                    ->wrap(),
-
-                Tables\Columns\TextColumn::make('task.section.name')
-                    ->label('Section')
-                    ->badge()
-                    ->searchable(),
+                    ->wrap()
+                    ->description(fn (Submission $record): string => strip_tags(substr($record->task->description ?? '', 0, 100)) . '...')
+                    ->tooltip(fn (Submission $record): string => strip_tags($record->task->description ?? 'No description')),
 
                 Tables\Columns\TextColumn::make('task.max_score')
-                    ->label('Max Score')
+                    ->label('Max')
                     ->alignCenter()
                     ->badge()
                     ->color('info'),
@@ -125,48 +114,82 @@ class ManageStudentSubmissions extends Page implements HasTable
                         default => 'gray',
                     }),
 
-                Tables\Columns\TextColumn::make('review.reviewer.name')
-                    ->label('Reviewer')
-                    ->default('Not assigned')
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('review.score')
+                Tables\Columns\TextInputColumn::make('score_input')
                     ->label('Score')
-                    ->alignCenter()
-                    ->badge()
-                    ->color(function ($record) {
-                        $score = $record->review?->score;
-                        $maxScore = $record->task?->max_score ?? 10;
-
-                        if ($score === null) return 'gray';
-
-                        $percentage = ($score / $maxScore) * 100;
-
-                        return match (true) {
-                            $percentage >= 75 => 'success',
-                            $percentage >= 50 => 'warning',
-                            default => 'danger',
-                        };
+                    ->getStateUsing(fn (Submission $record) => $record->review?->score)
+                    ->rules(function ($record) {
+                        $maxScore = $record->task->max_score ?? 10;
+                        return ['nullable', 'numeric', 'min:0', "max:{$maxScore}"];
                     })
-                    ->formatStateUsing(function ($record) {
-                        $score = $record->review?->score;
-                        $maxScore = $record->task?->max_score ?? 10;
+                    ->updateStateUsing(function (Submission $record, $state) {
+                        if ($state === null || $state === '') {
+                            return;
+                        }
 
-                        return $score !== null ? "{$score}/{$maxScore}" : 'Not graded';
+                        $maxScore = $record->task->max_score ?? 10;
+
+                        if ($state > $maxScore) {
+                            Notification::make()
+                                ->title('Score exceeds maximum')
+                                ->body("Score cannot exceed {$maxScore}")
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Create or update review
+                        $record->review()->updateOrCreate(
+                            ['submission_id' => $record->id],
+                            [
+                                'score' => $state,
+                                'reviewer_id' => $record->review?->reviewer_id ?? Auth::id(),
+                                'is_completed' => true,
+                                'reviewed_at' => now(),
+                            ]
+                        );
+
+                        // Update submission status
+                        $record->update(['status' => SubmissionTypes::COMPLETED->value]);
+
+                        // Refresh the record to get the updated review
+                        $record->refresh();
+
+                        Notification::make()
+                            ->title('Score updated')
+                            ->success()
+                            ->send();
                     })
-                    ->sortable(),
+                    ->placeholder('0')
+                    ->alignCenter(),
+
+                Tables\Columns\TextInputColumn::make('comments_input')
+                    ->label('Comments')
+                    ->getStateUsing(fn (Submission $record) => $record->review?->comments)
+                    ->updateStateUsing(function (Submission $record, $state) {
+                        // Create or update review
+                        $record->review()->updateOrCreate(
+                            ['submission_id' => $record->id],
+                            [
+                                'comments' => $state,
+                                'reviewer_id' => $record->review?->reviewer_id ?? Auth::id(),
+                            ]
+                        );
+
+                        // Refresh the record to get the updated review
+                        $record->refresh();
+
+                        Notification::make()
+                            ->title('Comment saved')
+                            ->success()
+                            ->send();
+                    })
+                    ->placeholder('Add feedback...'),
 
                 Tables\Columns\TextColumn::make('submitted_at')
                     ->label('Submitted')
-                    ->dateTime()
-                    ->since()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('review.reviewed_at')
-                    ->label('Reviewed')
-                    ->dateTime()
-                    ->since()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->dateTime('M d, Y')
+                    ->sortable()
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -177,11 +200,6 @@ class ManageStudentSubmissions extends Page implements HasTable
                         SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
                         SubmissionTypes::FLAGGED->value => 'Flagged',
                     ]),
-
-                Tables\Filters\SelectFilter::make('task')
-                    ->relationship('task', 'title')
-                    ->searchable()
-                    ->preload(),
 
                 Tables\Filters\Filter::make('graded')
                     ->label('Graded Only')
@@ -215,10 +233,11 @@ class ManageStudentSubmissions extends Page implements HasTable
                     ->openUrlInNewTab()
                     ->visible(fn (Submission $record) => $record->file_path && $record->file_name),
 
+                // Keep the original score button for complex scoring scenarios
                 Tables\Actions\Action::make('score_submission')
-                    ->label('Score')
-                    ->icon('heroicon-o-pencil-square')
-                    ->color('success')
+                    ->label('Advanced')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->color('gray')
                     ->form(function (Submission $record) {
                         $maxScore = $record->task->max_score ?? 10;
 
@@ -229,11 +248,6 @@ class ManageStudentSubmissions extends Page implements HasTable
                                         ->label('Task')
                                         ->content($record->task->title)
                                         ->columnSpanFull(),
-//
-//                                    Forms\Components\Placeholder::make('task_description')
-//                                        ->label('Task Decription')
-//                                        ->content($record->task->description)
-//                                        ->columnSpanFull(),
 
                                     Forms\Components\View::make('filament.components.task-description')
                                         ->viewData([
@@ -249,14 +263,13 @@ class ManageStudentSubmissions extends Page implements HasTable
                                         ->label('Submitted At')
                                         ->content($record->submitted_at?->format('M d, Y H:i')),
 
-                                    // ✅ your new download button here
                                     Forms\Components\Actions::make([
                                         Forms\Components\Actions\Action::make('download_submission')
                                             ->label('Download File')
                                             ->icon('heroicon-o-arrow-down-tray')
                                             ->color('primary')
-                                            ->visible(fn (Submission $record) => $record->file_path && $record->file_name)
-                                            ->url(fn (Submission $record) => static::getDownloadUrl($record))
+                                            ->visible(fn () => $record->file_path && $record->file_name)
+                                            ->url(fn () => static::getDownloadUrl($record))
                                             ->openUrlInNewTab()
                                     ])
                                         ->columnSpanFull(),
@@ -310,7 +323,6 @@ class ManageStudentSubmissions extends Page implements HasTable
                         ];
                     })
                     ->action(function (Submission $record, array $data) {
-                        // Update or create the review
                         $reviewData = [
                             'score' => $data['score'],
                             'comments' => $data['comments'] ?? null,
@@ -318,7 +330,6 @@ class ManageStudentSubmissions extends Page implements HasTable
                             'reviewed_at' => now(),
                         ];
 
-                        // Handle admin override
                         if ($data['admin_override'] ?? false) {
                             $reviewData['admin_override'] = true;
                             $reviewData['override_reason'] = $data['override_reason'];
@@ -326,7 +337,6 @@ class ManageStudentSubmissions extends Page implements HasTable
                             $reviewData['overridden_at'] = now();
                         }
 
-                        // If no reviewer assigned, set current admin as reviewer
                         if (!$record->review?->reviewer_id) {
                             $reviewData['reviewer_id'] = Auth::id();
                         }
@@ -336,24 +346,16 @@ class ManageStudentSubmissions extends Page implements HasTable
                             $reviewData
                         );
 
-                        // Update submission status
-                        $record->update([
-                            'status' => $data['status'],
-                        ]);
+                        $record->update(['status' => $data['status']]);
 
                         Notification::make()
                             ->title('Submission scored successfully')
                             ->success()
                             ->send();
                     })
-                    ->modalHeading('Score Submission')
+                    ->modalHeading('Advanced Scoring')
                     ->modalSubmitActionLabel('Save Score')
                     ->modalWidth('2xl'),
-
-                Tables\Actions\ViewAction::make()
-                    ->url(fn (Submission $record): string =>
-                    route('filament.admin.resources.submissions.view', ['record' => $record])
-                    ),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('back')
