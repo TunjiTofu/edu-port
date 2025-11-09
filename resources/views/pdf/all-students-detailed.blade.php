@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>All Students Detailed Results</title>
+    <title>All Intending MGs Detailed Results</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -91,19 +91,19 @@
 <body>
 {{-- Cover Page --}}
 <div class="header">
-    <h1>All Students Detailed Academic Results</h1>
+    <h1>All Intending MGs Detailed Academic Results</h1>
     <p style="margin: 0; font-size: 10px;">Generated on {{ now()->format('F d, Y') }}</p>
     <p style="margin: 5px 0 0 0; font-size: 12px; font-weight: bold; color: #003DA5;">Total Students: {{ count($students) }}</p>
 </div>
 
 {{-- Summary Table --}}
 <div class="section">
-    <div class="section-title">SUMMARY OF ALL STUDENTS</div>
+    <div class="section-title">SUMMARY OF ALL INTENDING MGs</div>
     <table>
         <thead>
         <tr>
             <th style="width: 5%;">#</th>
-            <th style="width: 25%;">Student Name</th>
+            <th style="width: 25%;">Intending MG Name</th>
             <th style="width: 20%;">Email</th>
             <th style="width: 15%;">Church</th>
             <th style="text-align: center; width: 8%;">Tasks</th>
@@ -144,7 +144,7 @@
 
     {{-- Student Information --}}
     <div class="section">
-        <div class="section-title">STUDENT INFORMATION</div>
+        <div class="section-title">INTENDING MG INFORMATION</div>
         <div style="padding: 8px 12px; background-color: #f5f5f5; border: 1px solid #ddd; font-size: 11px; line-height: 1.6;">
             <strong style="color: #003DA5;">{{ $studentData['student']['name'] }}</strong> | {{ $studentData['student']['email'] }} | {{ $studentData['student']['phone'] ?? 'N/A' }}<br>
             <strong>Church:</strong> {{ $studentData['student']['church'] ?? 'N/A' }} | <strong>District:</strong> {{ $studentData['student']['district'] ?? 'N/A' }}

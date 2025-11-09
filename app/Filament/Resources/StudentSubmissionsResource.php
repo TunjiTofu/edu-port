@@ -52,7 +52,7 @@ class StudentSubmissionsResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Student Name')
+                    ->label('Intending MG Name')
                     ->searchable()
                     ->sortable()
                     ->weight(FontWeight::Bold),

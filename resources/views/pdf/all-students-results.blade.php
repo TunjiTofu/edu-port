@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>All Students Detailed Results</title>
+    <title>All Intending MGs Detailed Results</title>
     <style>
         body {
             font-family: Arial, sans-serif;

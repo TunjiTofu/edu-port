@@ -1,14 +1,12 @@
 <?php
 
-namespace App\Filament\Resources;
+namespace App\Filament\Observer\Resources;
 
-use App\Filament\Resources\StudentResultsResource\Pages;
+use App\Filament\Observer\Resources\StudentResultsResource\Pages;
 use App\Models\User;
 use App\Models\Task;
 use App\Models\Section;
 use App\Services\Utility\Constants;
-use App\Enums\SubmissionTypes;
-use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\FontWeight;
@@ -17,10 +15,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Filament\Tables\Actions\Action;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\StudentResultsExport;
 
 class StudentResultsResource extends Resource
 {
@@ -32,7 +27,7 @@ class StudentResultsResource extends Resource
 
     protected static ?string $navigationGroup = 'Reports';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     protected static ?string $modelLabel = 'Intending MG Result';
 
@@ -41,7 +36,7 @@ class StudentResultsResource extends Resource
     public static function canViewAny(): bool
     {
         $user = Auth::user();
-        return $user && ($user->isAdmin() || $user->isObserver());
+        return $user && $user->isObserver();
     }
 
     public static function form(Form $form): Form
@@ -264,104 +259,7 @@ class StudentResultsResource extends Resource
                     ->action(function (User $record) {
                         return static::exportStudentPdf($record);
                     }),
-
-                Tables\Actions\Action::make('export_excel')
-                    ->label('Export Excel')
-                    ->icon('heroicon-o-table-cells')
-                    ->color('success')
-                    ->action(function (User $record) {
-                        return static::exportStudentExcel($record);
-                    }),
             ])
-            ->headerActions(
-                Auth::user()?->isAdmin() ? [
-                    Tables\Actions\Action::make('export_all_detailed_pdf')
-                        ->label('Export All Detailed (PDF)')
-                        ->icon('heroicon-o-document-text')
-                        ->color('danger')
-                        ->action(function () {
-                            return static::exportAllStudentsDetailedPdf();
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Export All Intending MGs - Detailed Report')
-                        ->modalDescription('This will generate a comprehensive PDF with individual detailed pages for each student. For 86 students, this will create ~87 pages and may take 1-3 minutes. Please be patient.')
-                        ->modalSubmitActionLabel('Generate PDF'),
-
-                    Tables\Actions\Action::make('export_top_students_pdf')
-                        ->label('Export Top N Students (PDF)')
-                        ->icon('heroicon-o-star')
-                        ->color('success')
-                        ->form([
-                            Forms\Components\TextInput::make('limit')
-                                ->label('Number of Students')
-                                ->numeric()
-                                ->required()
-                                ->default(20)
-                                ->minValue(1)
-                                ->maxValue(100)
-                                ->helperText('Enter the number of top students to export (sorted by highest score)')
-                                ->suffix('students'),
-                        ])
-                        ->action(function (array $data) {
-                            return static::exportTopStudentsDetailedPdf($data['limit']);
-                        })
-                        ->modalHeading('Export Top Students - Detailed Report')
-                        ->modalDescription('Enter how many top students (by score) you want to export. Recommended: 10-30 for faster generation.')
-                        ->modalSubmitActionLabel('Generate PDF')
-                        ->modalWidth('md'),
-
-                    Tables\Actions\Action::make('export_range_students_pdf')
-                        ->label('Export Student Range (PDF)')
-                        ->icon('heroicon-o-queue-list')
-                        ->color('info')
-                        ->form([
-                            Forms\Components\Grid::make(2)
-                                ->schema([
-                                    Forms\Components\TextInput::make('start')
-                                        ->label('Start Position')
-                                        ->numeric()
-                                        ->required()
-                                        ->default(1)
-                                        ->minValue(1)
-                                        ->helperText('Starting position (1 = highest score)'),
-                                    Forms\Components\TextInput::make('end')
-                                        ->label('End Position')
-                                        ->numeric()
-                                        ->required()
-                                        ->default(20)
-                                        ->minValue(1)
-                                        ->helperText('Ending position (e.g., 20 = 20th student)'),
-                                ]),
-                        ])
-                        ->action(function (array $data) {
-                            return static::exportRangeStudentsDetailedPdf($data['start'], $data['end']);
-                        })
-                        ->modalHeading('Export Student Range - Detailed Report')
-                        ->modalDescription('Export students from position X to position Y (sorted by score). Example: Start=21, End=40 exports students ranked 21st to 40th.')
-                        ->modalSubmitActionLabel('Generate PDF')
-                        ->modalWidth('md'),
-
-                    Tables\Actions\Action::make('export_all_pdf')
-                        ->label('Export All Summary (PDF)')
-                        ->icon('heroicon-o-document-arrow-down')
-                        ->color('warning')
-                        ->action(function () {
-                            return static::exportAllStudentsPdf();
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Export All Intending MGs - Summary Only')
-                        ->modalDescription('This will generate a summary table of all Intending MGs (much faster than detailed export).')
-                        ->modalSubmitActionLabel('Generate PDF'),
-
-                    Tables\Actions\Action::make('export_all_excel')
-                        ->label('Export All (Excel)')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
-                        ->action(function () {
-                            return static::exportAllStudentsExcel();
-                        }),
-                ] : []
-            )
             ->defaultSort('calculated_score_percentage', 'desc');
     }
 
@@ -404,169 +302,9 @@ class StudentResultsResource extends Resource
         }, 'student-result-' . $student->id . '-' . now()->format('Y-m-d') . '.pdf');
     }
 
-    protected static function exportStudentExcel(User $student)
-    {
-        $data = static::getStudentDetailedData($student);
-
-        return Excel::download(
-            new StudentResultsExport([$data]),
-            'student-result-' . $student->id . '-' . now()->format('Y-m-d') . '.xlsx'
-        );
-    }
-
-    protected static function exportAllStudentsPdf()
-    {
-        // Increase memory and time limits
-        ini_set('memory_limit', '512M');
-        ini_set('max_execution_time', '300');
-
-        $students = User::where('role_id', Constants::STUDENT_ID)
-            ->with(['church', 'district'])
-            ->get();
-
-        $allData = $students->map(function ($student) {
-            $student->load(['submissions.task.section', 'submissions.review']);
-            return static::getStudentDetailedData($student);
-        });
-
-        // Sort by score descending (highest to lowest)
-        $allData = $allData->sortByDesc(function ($studentData) {
-            return $studentData['summary']['score_out_of_100'];
-        })->values();
-
-        $pdf = Pdf::loadView('pdf.all-students-results', ['students' => $allData])
-            ->setPaper('a4', 'portrait')
-            ->setOption('isHtml5ParserEnabled', true)
-            ->setOption('isRemoteEnabled', false);
-
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
-        }, 'all-students-summary-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    protected static function exportAllStudentsDetailedPdf()
-    {
-        // Increase memory and time limits for large exports
-        ini_set('memory_limit', '512M');
-        ini_set('max_execution_time', '300'); // 5 minutes
-
-        $students = User::where('role_id', Constants::STUDENT_ID)
-            ->with(['church', 'district'])
-            ->get();
-
-        // Process in smaller chunks to avoid memory issues
-        $allData = $students->map(function ($student) {
-            // Load submissions separately to avoid memory bloat
-            $student->load(['submissions.task.section', 'submissions.review']);
-            return static::getStudentDetailedData($student);
-        });
-
-        // Sort by score descending (highest to lowest)
-        $allData = $allData->sortByDesc(function ($studentData) {
-            return $studentData['summary']['score_out_of_100'];
-        })->values();
-
-        // Use setPaper and setOption to optimize PDF generation
-        $pdf = Pdf::loadView('pdf.all-students-detailed', ['students' => $allData])
-            ->setPaper('a4', 'portrait')
-            ->setOption('isHtml5ParserEnabled', true)
-            ->setOption('isRemoteEnabled', false)
-            ->setOption('chroot', [public_path()]);
-
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
-        }, 'all-students-detailed-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    protected static function exportTopStudentsDetailedPdf(int $limit = 20)
-    {
-        // Increase memory and time limits
-        ini_set('memory_limit', '512M');
-        ini_set('max_execution_time', '180'); // 3 minutes
-
-        $students = User::where('role_id', Constants::STUDENT_ID)
-            ->with(['church', 'district'])
-            ->get();
-
-        // Get all student data
-        $allData = $students->map(function ($student) {
-            $student->load(['submissions.task.section', 'submissions.review']);
-            return static::getStudentDetailedData($student);
-        });
-
-        // Sort by score descending and take only top N
-        $topStudents = $allData->sortByDesc(function ($studentData) {
-            return $studentData['summary']['score_out_of_100'];
-        })->take($limit)->values();
-
-        $pdf = Pdf::loadView('pdf.all-students-detailed', ['students' => $topStudents])
-            ->setPaper('a4', 'portrait')
-            ->setOption('isHtml5ParserEnabled', true)
-            ->setOption('isRemoteEnabled', false);
-
-        return response()->streamDownload(function () use ($pdf, $limit) {
-            echo $pdf->output();
-        }, 'top-' . $limit . '-students-detailed-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    protected static function exportRangeStudentsDetailedPdf(int $start = 1, int $end = 20)
-    {
-        // Increase memory and time limits
-        ini_set('memory_limit', '512M');
-        ini_set('max_execution_time', '180'); // 3 minutes
-
-        $students = User::where('role_id', Constants::STUDENT_ID)
-            ->with(['church', 'district'])
-            ->get();
-
-        // Get all student data
-        $allData = $students->map(function ($student) {
-            $student->load(['submissions.task.section', 'submissions.review']);
-            return static::getStudentDetailedData($student);
-        });
-
-        // Sort by score descending
-        $sortedStudents = $allData->sortByDesc(function ($studentData) {
-            return $studentData['summary']['score_out_of_100'];
-        })->values();
-
-        // Get the range (convert to 0-indexed)
-        $rangeStudents = $sortedStudents->slice($start - 1, $end - $start + 1)->values();
-
-        $pdf = Pdf::loadView('pdf.all-students-detailed', ['students' => $rangeStudents])
-            ->setPaper('a4', 'portrait')
-            ->setOption('isHtml5ParserEnabled', true)
-            ->setOption('isRemoteEnabled', false);
-
-        return response()->streamDownload(function () use ($pdf, $start, $end) {
-            echo $pdf->output();
-        }, 'students-' . $start . '-to-' . $end . '-detailed-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    protected static function exportAllStudentsExcel()
-    {
-        $students = User::where('role_id', Constants::STUDENT_ID)
-            ->with(['church', 'district', 'submissions.task.section', 'submissions.review'])
-            ->get();
-
-        $allData = $students->map(function ($student) {
-            return static::getStudentDetailedData($student);
-        });
-
-        // Sort by score descending (highest to lowest)
-        $allData = $allData->sortByDesc(function ($studentData) {
-            return $studentData['summary']['score_out_of_100'];
-        })->values()->toArray();
-
-        return Excel::download(
-            new StudentResultsExport($allData),
-            'all-students-results-' . now()->format('Y-m-d') . '.xlsx'
-        );
-    }
-
     protected static function getStudentDetailedData(User $student): array
     {
-        // Reload student with fresh relationships (in case query was modified)
+        // Reload student with fresh relationships
         $student = User::with(['church', 'district', 'submissions.task.section', 'submissions.review'])
             ->find($student->id);
 

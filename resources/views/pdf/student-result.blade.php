@@ -139,13 +139,13 @@
 <body>
 {{-- Header - Compact --}}
 <div class="header" style="margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #003DA5;">
-    <h1 style="font-size: 20px; margin: 0 0 5px 0; color: #003DA5;">Student Academic Result Report</h1>
+    <h1 style="font-size: 20px; margin: 0 0 5px 0; color: #003DA5;">Intending MG Result Report</h1>
     <p style="margin: 0; font-size: 10px;">Generated on {{ now()->format('F d, Y') }}</p>
 </div>
 
 {{-- Student Information - Compact --}}
 <div class="section" style="margin-bottom: 15px;">
-    <div class="section-title" style="padding: 5px 12px; font-size: 13px; margin-bottom: 8px; background-color: #003DA5;">STUDENT INFORMATION</div>
+    <div class="section-title" style="padding: 5px 12px; font-size: 13px; margin-bottom: 8px; background-color: #003DA5;">INTENDING MG INFORMATION</div>
     <div style="padding: 8px 12px; background-color: #f5f5f5; border: 1px solid #ddd; font-size: 11px; line-height: 1.6;">
         <strong style="color: #003DA5;">{{ $student['name'] }}</strong> | {{ $student['email'] }} | {{ $student['phone'] ?? 'N/A' }}<br>
         <strong>Church:</strong> {{ $student['church'] ?? 'N/A' }} | <strong>District:</strong> {{ $student['district'] ?? 'N/A' }}

@@ -56,7 +56,7 @@ class StudentResultsSummarySheet implements FromCollection, WithHeadings, WithMa
     public function headings(): array
     {
         return [
-            'Student Name',
+            'Intending Mg Name',
             'Email',
             'Phone',
             'Church',
