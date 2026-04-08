@@ -111,7 +111,7 @@ class UpcomingDeadlinesWidget extends BaseWidget
                                         ->preserveFilenames()
                                         ->disk('local')
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 10MB.'),
+                                        ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 2MB.'),
 
                                     Textarea::make('notes')
                                         ->label('Student Notes (Optional)')

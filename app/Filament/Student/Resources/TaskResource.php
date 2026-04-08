@@ -282,7 +282,7 @@ class TaskResource extends Resource
                                         ->preserveFilenames()
                                         ->disk(config('filesystems.default'))
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF. Max size: 10MB.'),
+                                        ->helperText('Accepted formats: PDF. Max size: 2MB.'),
 
 
                                     Forms\Components\Textarea::make('notes')
@@ -377,7 +377,7 @@ class TaskResource extends Resource
                                         ->preserveFilenames()
                                         ->disk('local')
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF. Max size: 10MB.'),
+                                        ->helperText('Accepted formats: PDF. Max size: 2MB.'),
 
                                     Forms\Components\Textarea::make('notes')
                                         ->label('Student Notes (Optional)')

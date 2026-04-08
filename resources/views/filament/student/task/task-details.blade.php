@@ -447,7 +447,7 @@
                                                         <h4 class="font-bold text-gray-800 dark:text-gray-200 text-md mb-1">
                                                             {{ $reviewDetail['points_awarded'] }}/{{ $maxPoints }} points
                                                         </h4>
-                                                        @if($reviewDetail['review_rubric']['comments'])
+                                                        @if($reviewDetail && isset($reviewDetail['review_rubric']['comments']))
                                                             <h3 class="font-bold icon-primary text-sm mb-1">
                                                                 Comments: {{ $reviewDetail['review_rubric']['comments'] }}
                                                             </h3>

@@ -99,26 +99,6 @@ class SubmissionResource extends Resource
 
                 FormSection::make('Review Information')
                     ->schema([
-                        // Forms\Components\TextInput::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->disabled()
-                        //     ->formatStateUsing(function ($record) {
-                        //         return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     }),
-
-                        // Forms\Components\Select::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->relationship(
-                        //         name: 'review.reviewer',
-                        //         titleAttribute: 'name'
-                        //     )
-                        //     // ->formatStateUsing(function ($record) {
-                        //     //     return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     // })
-                        //     ->searchable()
-                        //     ->preload(),
-
-
 
                         // Status field (works for both)
                         Forms\Components\Select::make('status')
