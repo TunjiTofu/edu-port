@@ -2,8 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-
 use App\Enums\RoleTypes;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -20,53 +18,39 @@ class User extends Authenticatable implements FilamentUser
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, SoftDeletes;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
     protected $guarded = ['id'];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-            'password_updated_at' => 'datetime',
+            'email_verified_at'  => 'datetime',
+            'password'           => 'hashed',
+            'is_active'          => 'boolean',
+            'password_updated_at'=> 'datetime',
         ];
     }
+
+    // ── Relationships ──────────────────────────────────────────────────────────
 
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
     }
 
-    public function district() : BelongsTo
+    public function district(): BelongsTo
     {
         return $this->belongsTo(District::class);
     }
 
-    public function church() : BelongsTo
+    public function church(): BelongsTo
     {
         return $this->belongsTo(Church::class);
     }
-
 
     public function submissions(): HasMany
     {
@@ -75,6 +59,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function reviews(): HasMany
     {
+        // FIX: Removed duplicate reviewsAsReviewer() method — identical to this one.
         return $this->hasMany(Review::class, 'reviewer_id');
     }
 
@@ -83,48 +68,63 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(ProgramEnrollment::class, 'student_id');
     }
 
-    public function isStudent() : bool
+    // ── Role Checks ────────────────────────────────────────────────────────────
+    // FIX: All role checks now use null-safe operator (?->).
+    //      Previously $this->role->name would throw a fatal error for any user
+    //      whose role relationship is null (e.g. orphaned users, eager-load gaps).
+
+    public function isStudent(): bool
     {
-        return $this->role->name === RoleTypes::STUDENT->value;
+        return $this->role?->name === RoleTypes::STUDENT->value;
     }
 
-    public function isReviewer() : bool
+    public function isReviewer(): bool
     {
-        return $this->role->name === RoleTypes::REVIEWER->value;
+        return $this->role?->name === RoleTypes::REVIEWER->value;
     }
 
-    public function isAdmin() : bool
+    public function isAdmin(): bool
     {
-        return $this->role->name === RoleTypes::ADMIN->value;
+        return $this->role?->name === RoleTypes::ADMIN->value;
     }
 
-    public function isObserver() : bool
+    public function isObserver(): bool
     {
-        return $this->role->name === RoleTypes::OBSERVER->value;
+        return $this->role?->name === RoleTypes::OBSERVER->value;
     }
 
     public function hasPermission(string $permission): bool
     {
-        return $this->role->hasPermission($permission);
+        return $this->role?->hasPermission($permission) ?? false;
     }
 
-    public function reviewsAsReviewer()
-    {
-        return $this->hasMany(Review::class, 'reviewer_id');
-    }
-
-    public function canAccessPanel(Panel $panel): bool
-    {
-        return $this->isAdmin() || $this->isReviewer() || $this->isObserver() || $this->isStudent();
-    }
-
-    public function canAccessFilament(): bool
-    {
-        return true;
-    }
+    // ── Filament Access Control ────────────────────────────────────────────────
 
     /**
-     * Check if user needs to change their password
+     * FIX: canAccessPanel() was returning true for ALL roles on ALL panels.
+     * This gave every user a pass on every panel, relying entirely on the
+     * role-enforcement middleware. Now each panel checks the correct role,
+     * providing a second layer of defence.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        return match ($panel->getId()) {
+            'admin'    => $this->isAdmin(),
+            'reviewer' => $this->isReviewer(),
+            'observer' => $this->isObserver(),
+            'student'  => $this->isStudent(),
+            default    => false,
+        };
+    }
+
+    // ── Password Helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Check if user has never changed their default password.
      */
     public function needsPasswordChange(): bool
     {
@@ -132,10 +132,44 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Mark password as changed
+     * Mark the password as having been changed by the user.
+     * Call this after a successful password update instead of manually
+     * setting password_updated_at in every controller/page.
      */
     public function markPasswordAsChanged(): void
     {
         $this->update(['password_updated_at' => now()]);
+    }
+
+    // ── Scopes ─────────────────────────────────────────────────────────────────
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeByRole($query, string $roleName)
+    {
+        return $query->whereHas('role', fn ($q) => $q->where('name', $roleName));
+    }
+
+    public function scopeStudents($query)
+    {
+        return $query->byRole(RoleTypes::STUDENT->value);
+    }
+
+    public function scopeReviewers($query)
+    {
+        return $query->byRole(RoleTypes::REVIEWER->value);
+    }
+
+    public function scopeObservers($query)
+    {
+        return $query->byRole(RoleTypes::OBSERVER->value);
+    }
+
+    public function scopeAdmins($query)
+    {
+        return $query->byRole(RoleTypes::ADMIN->value);
     }
 }

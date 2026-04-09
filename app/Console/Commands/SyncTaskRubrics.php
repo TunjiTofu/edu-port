@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Rubric;
 use App\Models\Task;
+use Database\Seeders\RubricSeeder;
 use Illuminate\Console\Command;
 
 class SyncTaskRubrics extends Command
@@ -13,75 +14,57 @@ class SyncTaskRubrics extends Command
 
     /**
      * Execute the console command.
+     *
+     * REFACTOR: Default criteria now pulled from RubricSeeder::DEFAULT_CRITERIA
+     * instead of being duplicated here. Single source of truth — any change to
+     * default rubric structure only needs to happen in RubricSeeder.
+     *
+     * FIX: The --task-id path now also guards against duplicate rubrics via
+     * firstOrCreate, matching the seeder behaviour.
      */
-    public function handle()
+    public function handle(): int
     {
         $taskId = $this->option('task-id');
 
-        if ($taskId) {
-            $tasks = Task::where('id', $taskId)->get();
-        } else {
-            $tasks = Task::doesntHave('rubrics')->get();
-        }
+        $tasks = $taskId
+            ? Task::where('id', $taskId)->get()
+            : Task::doesntHave('rubrics')->get();
 
         if ($tasks->isEmpty()) {
             $this->info('No tasks found that need rubric syncing.');
             return 0;
         }
 
-        $defaultCriteria = [
-            [
-                'title' => 'Content Quality',
-                'description' => 'Accuracy, relevance, and depth of content provided',
-                'max_points' => 3.0,
-                'order_index' => 1,
-            ],
-            [
-                'title' => 'Organization & Structure',
-                'description' => 'Clear organization, logical flow, and proper structure',
-                'max_points' => 2.0,
-                'order_index' => 2,
-            ],
-            [
-                'title' => 'Completeness',
-                'description' => 'All required elements and components are included',
-                'max_points' => 2.0,
-                'order_index' => 3,
-            ],
-            [
-                'title' => 'Presentation & Format',
-                'description' => 'Professional presentation, proper formatting, and visual appeal',
-                'max_points' => 2.0,
-                'order_index' => 4,
-            ],
-            [
-                'title' => 'Timeliness',
-                'description' => 'Submitted on time and met all deadline requirements',
-                'max_points' => 1.0,
-                'order_index' => 5,
-            ],
-        ];
-
         $progressBar = $this->output->createProgressBar($tasks->count());
         $progressBar->start();
 
+        $created = 0;
+        $skipped = 0;
+
         foreach ($tasks as $task) {
-            foreach ($defaultCriteria as $criteria) {
-                Rubric::create([
-                    'task_id' => $task->id,
-                    'title' => $criteria['title'],
-                    'description' => $criteria['description'],
-                    'max_points' => $criteria['max_points'],
-                    'order_index' => $criteria['order_index'],
-                    'is_active' => true,
-                ]);
+            foreach (RubricSeeder::DEFAULT_CRITERIA as $criteria) {
+                $rubric = Rubric::firstOrCreate(
+                    [
+                        'task_id' => $task->id,
+                        'title'   => $criteria['title'],
+                    ],
+                    [
+                        'description' => $criteria['description'],
+                        'max_points'  => $criteria['max_points'],
+                        'order_index' => $criteria['order_index'],
+                        'is_active'   => true,
+                    ]
+                );
+
+                $rubric->wasRecentlyCreated ? $created++ : $skipped++;
             }
+
             $progressBar->advance();
         }
 
         $progressBar->finish();
         $this->newLine();
-        $this->info("Successfully synced rubrics for {$tasks->count()} tasks.");
+        $this->info("Done. Created: {$created} rubrics | Already existed: {$skipped}.");
 
         return 0;
     }

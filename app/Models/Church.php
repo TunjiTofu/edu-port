@@ -14,13 +14,42 @@ class Church extends Model
 
     protected $guarded = ['id'];
 
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    // ── Relationships ──────────────────────────────────────────────────────────
+
+    public function district(): BelongsTo
+    {
+        return $this->belongsTo(District::class);
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
     }
 
-    public function district(): BelongsTo
+    // ── Scopes ─────────────────────────────────────────────────────────────────
+
+    public function scopeActive($query)
     {
-        return $this->belongsTo(District::class);
+        return $query->where('is_active', true);
+    }
+
+    public function scopeInDistrict($query, int $districtId)
+    {
+        return $query->where('district_id', $districtId);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /**
+     * Check whether this church has any users assigned to it.
+     * Used by deletion guards to prevent orphaned user records.
+     */
+    public function hasUsers(): bool
+    {
+        return $this->users()->exists();
     }
 }
