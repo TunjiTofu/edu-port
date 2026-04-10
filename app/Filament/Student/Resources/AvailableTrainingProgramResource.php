@@ -4,26 +4,24 @@ namespace App\Filament\Student\Resources;
 
 use App\Enums\ProgramEnrollmentStatus;
 use App\Filament\Student\Resources\AvailableTrainingProgramResource\Pages;
-use App\Models\TrainingProgram;
 use App\Models\ProgramEnrollment;
+use App\Models\TrainingProgram;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
 class AvailableTrainingProgramResource extends Resource
 {
-    protected static ?string $model = TrainingProgram::class;
-    protected static ?string $navigationIcon = 'heroicon-o-plus-circle';
-    protected static ?string $navigationLabel = 'Available Training Programs';
+    protected static ?string $model           = TrainingProgram::class;
+    protected static ?string $navigationIcon  = 'heroicon-o-plus-circle';
+    protected static ?string $navigationLabel = 'Available Programs';
     protected static ?string $navigationGroup = 'Learning';
-    protected static ?int $navigationSort = 1;
+    protected static ?int    $navigationSort  = 1;
 
     public static function canViewAny(): bool
     {
@@ -33,11 +31,8 @@ class AvailableTrainingProgramResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->where('is_active', true)
-            ->whereDoesntHave('enrollments', function ($query) {
-                $query->where('student_id', Auth::user()->id);
-            })
-            ->with(['sections', 'sections.tasks', 'enrollments'])
+            ->active()
+            ->notEnrolledBy(Auth::id())
             ->withCount(['sections', 'enrollments']);
     }
 
@@ -46,227 +41,217 @@ class AvailableTrainingProgramResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\Layout\Stack::make([
+                    // Card layout — mobile first, single column
                     Tables\Columns\Layout\Split::make([
-                        Tables\Columns\ImageColumn::make('image')
+
+                        // Program image — small circle on the left
+                        Tables\Columns\ImageColumn::make('image_url')
                             ->label('')
-                            ->disk(config('filesystems.default'))
-                            ->visibility('private')
                             ->circular()
-                            ->size(80)
-                            ->defaultImageUrl('/images/default-program.png')
-                            ->grow(false),
+                            ->size(64)
+                            ->defaultImageUrl(asset('images/logo.png'))
+                            ->grow(false)
+                            ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
 
                         Tables\Columns\Layout\Stack::make([
+                            // Program name
                             Tables\Columns\TextColumn::make('name')
                                 ->label('')
-                                ->searchable()
-                                ->sortable()
                                 ->weight('bold')
-                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large),
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large)
+                                ->searchable()
+                                ->color('gray-900'),
 
+                            // Description
                             Tables\Columns\TextColumn::make('description')
                                 ->label('')
                                 ->color('gray')
-                                ->wrap(),
+                                ->wrap()
+                                ->limit(120),
 
+                            // Badges row — sections + enrolled count
                             Tables\Columns\Layout\Grid::make(2)
                                 ->schema([
                                     Tables\Columns\TextColumn::make('sections_count')
-                                        ->label('Sections')
-                                        ->counts('sections')
                                         ->badge()
                                         ->color('info')
-                                        ->formatStateUsing(fn($state) => 'Sections: ' . $state),
+                                        ->formatStateUsing(fn ($state) => "📚 {$state} " . str('Section')->plural($state)),
 
-                                    Tables\Columns\TextColumn::make('tasks_count')
-                                        ->label('Total Tasks')
-                                        ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
+                                    Tables\Columns\TextColumn::make('enrollments_count')
                                         ->badge()
-                                        ->color('warning')
-                                        ->formatStateUsing(fn($state) => 'Tasks: ' . $state),
+                                        ->color('success')
+                                        ->formatStateUsing(fn ($state) => "👥 {$state} Enrolled"),
                                 ]),
 
-                            Tables\Columns\TextColumn::make('')
-                                ->label('')
-                                ->formatStateUsing(fn() => '')
-                                ->extraAttributes(['style' => 'height: 8px;']),
-
+                            // Registration deadline badge
                             Tables\Columns\TextColumn::make('registration_deadline')
-                                ->label('Registration Deadline')
-                                ->date()
                                 ->badge()
-                                ->color(fn($state) => $state && now()->diffInDays($state) <= 7 ? 'danger' : 'info')
-                                ->formatStateUsing(fn($state) => $state ? 'Registration Deadline: ' . $state->format('M j, Y') : 'Registration Deadline: No deadline'),
+                                ->color(function ($state) {
+                                    if (! $state) return 'gray';
+                                    $days = now()->diffInDays($state, false);
+                                    return match (true) {
+                                        $days < 0  => 'danger',
+                                        $days <= 7 => 'warning',
+                                        default    => 'success',
+                                    };
+                                })
 
-                            Tables\Columns\TextColumn::make('')
-                                ->label('')
-                                ->formatStateUsing(fn() => '')
-                                ->extraAttributes(['style' => 'height: 8px;']),
+                                ->formatStateUsing(function ($state) {
+                                    if (! $state) return '🗓 No deadline';
 
+                                    $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+
+                                    $days = now()->diffInDays($carbon, false);
+                                    $hours = round(now()->diffInHours($carbon, false),1);
+
+                                    $label = match (true) {
+                                        $days < 0  => '⛔ Deadline passed',
+                                        $days < 1 && $hours > 0 => "⚠️ {$hours}hours left — " . $carbon->format('M j, Y g:i A'),
+                                        $days == 0 && $hours <= 0 => '⚠️ Closes today',
+                                        $days <= 7 => "⚠️ {$days} days left — " . $carbon->format('M j, Y'),
+                                        default    => '🗓 Deadline: ' . $carbon->format('M j, Y'),
+                                    };
+
+                                    return $label;
+                                }),
+
+                            // Start / End dates
                             Tables\Columns\Layout\Grid::make(2)
                                 ->schema([
                                     Tables\Columns\TextColumn::make('start_date')
-                                        ->label('Start Date')
-                                        ->date()
-                                        ->sortable()
-                                        ->icon('heroicon-o-calendar')
-                                        ->formatStateUsing(fn($state) => 'Start Date: ' . $state),
+                                        ->label('Starts')
+                                        ->icon('heroicon-o-play-circle')
+                                        // FIX: format Carbon date properly
+                                        ->formatStateUsing(fn ($state) =>
+                                        $state instanceof \Carbon\Carbon
+                                            ? $state->format('M j, Y')
+                                            : \Carbon\Carbon::parse($state)->format('M j, Y')
+                                        ),
 
                                     Tables\Columns\TextColumn::make('end_date')
-                                        ->label('End Date')
-                                        ->date()
-                                        ->sortable()
-                                        ->icon('heroicon-o-calendar')
-                                        ->formatStateUsing(fn($state) => 'End Date: ' . $state),
+                                        ->label('Ends')
+                                        ->icon('heroicon-o-stop-circle')
+                                        ->formatStateUsing(fn ($state) =>
+                                        $state instanceof \Carbon\Carbon
+                                            ? $state->format('M j, Y')
+                                            : \Carbon\Carbon::parse($state)->format('M j, Y')
+                                        ),
                                 ]),
-                        ])->grow(true),
-                    ])->from('md'),
+                        ])->space(2)->grow(true),
+                    ])->from('sm'),
                 ])->space(3),
             ])
             ->contentGrid([
-                'md' => 1,
-                'xl' => 1,
+                'default' => 1,
+                'sm'      => 1,
+                'md'      => 2,   // 2 cards per row on tablet
+                'xl'      => 2,   // keep 2 on desktop for readability
             ])
             ->filters([
                 Tables\Filters\Filter::make('registration_deadline')
                     ->form([
-                        Forms\Components\DatePicker::make('deadline_from')
-                            ->label('Registration deadline from'),
-                        Forms\Components\DatePicker::make('deadline_to')
-                            ->label('Registration deadline to'),
+                        Forms\Components\DatePicker::make('deadline_from')->label('Deadline from'),
+                        Forms\Components\DatePicker::make('deadline_to')->label('Deadline to'),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['deadline_from'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('registration_deadline', '>=', $date),
-                            )
-                            ->when(
-                                $data['deadline_to'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('registration_deadline', '<=', $date),
-                            );
-                    }),
-
-                Tables\Filters\Filter::make('start_date')
-                    ->form([
-                        Forms\Components\DatePicker::make('start_date')
-                            ->label('Starting from'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['start_date'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('start_date', '>=', $date),
-                            );
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['deadline_from'],
+                            fn ($q, $date) => $q->whereDate('registration_deadline', '>=', $date))
+                        ->when($data['deadline_to'],
+                            fn ($q, $date) => $q->whereDate('registration_deadline', '<=', $date))
+                    ),
             ])
             ->actions([
                 Tables\Actions\Action::make('enroll')
                     ->label('Enroll')
                     ->icon('heroicon-o-plus')
                     ->color('success')
+                    ->button()
                     ->requiresConfirmation()
-                    ->modalHeading('Enroll in Training Program')
-                    ->modalDescription(fn($record) => "Are you sure you want to enroll in '{$record->name}'? This will add the program to your learning dashboard.")
+                    ->modalHeading('Enroll in Program')
+                    ->modalDescription(fn ($record) => "Enroll in '{$record->name}'? It will be added to your learning dashboard.")
                     ->modalSubmitActionLabel('Enroll Now')
-                    ->action(function (TrainingProgram $record) {
-                        try {
-                            // Check if registration is still open
-                            if (!$record->isRegistrationOpen()) {
-                                Notification::make()
-                                    ->title('Registration Closed')
-                                    ->body('Registration for this program has closed.')
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
-
-//                        // Check if program is fully enrolled
-//                        if ($record->isFullyEnrolled()) {
-//                            Notification::make()
-//                                ->title('Program Full')
-//                                ->body('This program has reached its maximum enrollment capacity.')
-//                                ->warning()
-//                                ->send();
-//                            return;
-//                        }
-
-                            // Check if already enrolled (safety check)
-                            $existingEnrollment = ProgramEnrollment::where('student_id', Auth::user()->id)
-                                ->where('training_program_id', $record->id)
-                                ->first();
-
-                            if ($existingEnrollment) {
-                                Notification::make()
-                                    ->title('Already Enrolled')
-                                    ->body('You are already enrolled in this program.')
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
-
-                            // Create new enrollment
-                            ProgramEnrollment::create([
-                                'student_id' => Auth::user()->id,
-                                'training_program_id' => $record->id,
-                                'enrolled_at' => now(),
-                                'status' => ProgramEnrollmentStatus::ACTIVE->value,
-                            ]);
-
-                            Notification::make()
-                                ->title('Enrollment Successful!')
-                                ->body("You have successfully enrolled in '{$record->name}'. You can now access it from your programs.")
-                                ->success()
-                                ->send();
-
-                            // Redirect to My Programs
-                            return redirect()->to('/student/training-programs');
-
-                        } catch (\Exception $e) {
-                            Log::alert('Error enrolling in program: ' . $e->getMessage(), [$e]);
-                            Notification::make()
-                                ->title('Enrollment Failed')
-                                ->body('There was an error enrolling in the program. Please try again.')
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                    ->action(fn (TrainingProgram $record) => static::handleEnroll($record)),
 
                 Tables\Actions\ViewAction::make()
-                    ->label('View Details')
-                    ->color('primary')
-                    ->icon('heroicon-o-eye'),
+                    ->label('Details')
+                    ->color('gray')
+                    ->button(),
             ])
             ->bulkActions([])
             ->emptyStateHeading('No Available Programs')
-            ->emptyStateDescription('There are no training programs available for enrollment at this time.')
-            ->emptyStateIcon('heroicon-o-plus-circle');
+            ->emptyStateDescription('There are no programs open for enrollment right now.')
+            ->emptyStateIcon('heroicon-o-academic-cap');
+    }
+
+    public static function handleEnroll(TrainingProgram $record): void
+    {
+        $candidateId = Auth::id();
+        $context     = [
+            'program_id'      => $record->id,
+            'program_name'    => $record->name,
+            'candidate_id'    => $candidateId,
+            'candidate_email' => Auth::user()?->email,
+            'ip'              => request()->ip(),
+        ];
+
+        Log::info('Enrollment: attempt', array_merge($context, ['event' => 'enrollment_attempt']));
+
+        try {
+            if (! $record->isRegistrationOpen()) {
+                Log::info('Enrollment: rejected — registration closed', array_merge($context, ['event' => 'enrollment_rejected_registration_closed']));
+                Notification::make()->title('Registration Closed')->body('Registration for this program has closed.')->warning()->send();
+                return;
+            }
+
+            if (! $record->hasAvailableCapacity()) {
+                Log::info('Enrollment: rejected — program full', array_merge($context, ['event' => 'enrollment_rejected_program_full']));
+                Notification::make()->title('Program Full')->body('This program has reached its maximum enrollment capacity.')->warning()->send();
+                return;
+            }
+
+            if (ProgramEnrollment::where('student_id', $candidateId)->where('training_program_id', $record->id)->exists()) {
+                Log::warning('Enrollment: duplicate attempt', array_merge($context, ['event' => 'enrollment_rejected_already_enrolled']));
+                Notification::make()->title('Already Enrolled')->body('You are already enrolled in this program.')->warning()->send();
+                return;
+            }
+
+            $enrollment = ProgramEnrollment::create([
+                'student_id'          => $candidateId,
+                'training_program_id' => $record->id,
+                'enrolled_at'         => now(),
+                'status'              => ProgramEnrollmentStatus::ACTIVE->value,
+            ]);
+
+            Log::info('Enrollment: success', array_merge($context, ['event' => 'enrollment_success', 'enrollment_id' => $enrollment->id]));
+
+            Notification::make()->title('Enrolled!')->body("You're now enrolled in '{$record->name}'.'")->success()->send();
+
+            redirect()->to('/student/training-programs');
+
+        } catch (\Exception $e) {
+            Log::error('Enrollment: error', array_merge($context, ['event' => 'enrollment_error', 'error' => $e->getMessage()]));
+            Notification::make()->title('Enrollment Failed')->body('An error occurred. Please try again.')->danger()->send();
+        }
     }
 
     public static function getNavigationBadge(): ?string
     {
-        return static::getEloquentQuery()->count();
+        $count = TrainingProgram::active()->notEnrolledBy(Auth::id())->count();
+        return $count > 0 ? (string) $count : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
     {
-        $count = static::getNavigationBadge();
-        return $count > 0 ? 'success' : null;
+        return 'success';
     }
 
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+    public static function getRelations(): array { return []; }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListAvailableTrainingPrograms::route('/'),
-            'view' => Pages\ViewAvailableTrainingProgram::route('/{record}'),
+            'view'  => Pages\ViewAvailableTrainingProgram::route('/{record}'),
         ];
     }
 }

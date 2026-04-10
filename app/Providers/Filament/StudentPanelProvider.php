@@ -4,14 +4,17 @@ namespace App\Providers\Filament;
 
 use App\Filament\Student\Pages\ChangePassword;
 use App\Filament\Student\Resources\ChangePasswordResource;
+use App\Filament\Student\Widgets\PerformanceChartWidget;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
+use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\EnsureUserIsStudent;
 use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\UserMenuItem;
 use Filament\Pages;
 use Filament\Panel;
@@ -33,20 +36,27 @@ class StudentPanelProvider extends PanelProvider
             ->id('student')
             ->path('student')
             ->login()
-            ->colors([
-                'primary' => Color::Green,
-            ])
-            ->discoverResources(in: app_path('Filament/Student/Resources'), for: 'App\\Filament\\Student\\Resources')
-            ->discoverPages(in: app_path('Filament/Student/Pages'), for: 'App\\Filament\\Student\\Pages')
+            ->colors(['primary' => Color::Green])
+            ->brandName('MG Portfolio — Candidate Portal')
+            ->favicon(asset('favicon.ico'))
+
+            ->discoverResources(
+                in: app_path('Filament/Student/Resources'),
+                for: 'App\\Filament\\Student\\Resources'
+            )
+            ->discoverPages(
+                in: app_path('Filament/Student/Pages'),
+                for: 'App\\Filament\\Student\\Pages'
+            )
             ->pages([
                 Pages\Dashboard::class,
                 ChangePassword::class,
             ])
-//            ->discoverWidgets(in: app_path('Filament/Student/Widgets'), for: 'App\\Filament\\Student\\Widgets')
             ->widgets([
                 StudentProgressWidget::class,
                 RecentSubmissionsWidget::class,
-                UpcomingDeadlinesWidget::class
+                UpcomingDeadlinesWidget::class,
+                PerformanceChartWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -58,27 +68,20 @@ class StudentPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                ForcePasswordChange::class
+                ForcePasswordChange::class,
+                // Runs after ForcePasswordChange so candidates who need a
+                // password change are handled first, profile check second.
+                EnsureProfileComplete::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
                 EnsureUserIsStudent::class,
             ])
-            ->brandName('Candidate Portal')
-            ->favicon(asset('favicon.ico'))
             ->navigationGroups([
-                \Filament\Navigation\NavigationGroup::make('Learning')
-                    // ->icon('heroicon-o-academic-cap')
-                    ->collapsible(),
-                \Filament\Navigation\NavigationGroup::make('Submissions')
-                    // ->icon('heroicon-o-document-text')
-                    ->collapsible(),
-                \Filament\Navigation\NavigationGroup::make('Performance')
-                    // ->icon('heroicon-o-chart-bar')
-                    ->collapsible(),
-                \Filament\Navigation\NavigationGroup::make('User Management')
-                    // ->icon('heroicon-o-chart-bar')
-                    ->collapsible(),
+                NavigationGroup::make('Learning')->collapsible(),
+                NavigationGroup::make('Submissions')->collapsible(),
+                NavigationGroup::make('Performance')->collapsible(),
+                NavigationGroup::make('Account')->collapsible(),
             ])
             ->userMenuItems([
                 'change-password' => UserMenuItem::make()

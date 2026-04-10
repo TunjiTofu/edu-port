@@ -3,29 +3,27 @@
 namespace App\Filament\Student\Widgets;
 
 use App\Enums\SubmissionTypes;
+use App\Models\Submission;
+use App\Models\Task;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Wizard;
-use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
-use App\Models\Task;
-use App\Models\Submission;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class UpcomingDeadlinesWidget extends BaseWidget
 {
-    protected static ?int $sort = 3;
-    protected int | string | array $columnSpan = 'full';
-    protected static ?string $heading = 'Upcoming Deadlines';
-    protected static ?string $description = 'Tasks that need your attention';
+    protected static ?int      $sort        = 3;
+    protected int|string|array $columnSpan  = 'full';
+    protected static ?string   $heading     = 'Upcoming Deadlines';
+    protected static ?string   $description = 'Tasks that need your attention';
 
     public function table(Table $table): Table
     {
@@ -63,30 +61,26 @@ class UpcomingDeadlinesWidget extends BaseWidget
                 Tables\Columns\TextColumn::make('due_date')
                     ->label('Due Date')
                     ->formatStateUsing(function ($state) {
-                        if (!$state) return 'No deadline';
-
-                        $daysLeft = now()->diffInDays($state, false);
-                        $wholeDays = (int)round($daysLeft); // Convert to whole number
-
+                        if (! $state) return 'No deadline';
+                        $daysLeft  = now()->diffInDays($state, false);
+                        $wholeDays = (int) round($daysLeft);
                         if ($daysLeft == 0) return 'Due today';
                         if ($daysLeft == 1) return 'Due tomorrow';
-                        if ($daysLeft > 0) return "Due in {$wholeDays} days";
+                        if ($daysLeft >  0) return "Due in {$wholeDays} days";
                         return 'Overdue';
                     })
                     ->badge()
                     ->color(function ($state) {
-                        if (!$state) return 'gray';
-
+                        if (! $state) return 'gray';
                         $daysLeft = now()->diffInDays($state, false);
-                        return match(true) {
-                            $daysLeft < 0 => 'danger',
+                        return match (true) {
+                            $daysLeft < 0  => 'danger',
                             $daysLeft <= 1 => 'danger',
                             $daysLeft <= 3 => 'warning',
                             $daysLeft <= 7 => 'info',
-                            default => 'success'
+                            default        => 'success',
                         };
                     }),
-
             ])
             ->actions([
                 Tables\Actions\Action::make('submit')
@@ -99,24 +93,24 @@ class UpcomingDeadlinesWidget extends BaseWidget
                                 ->icon('heroicon-o-document-arrow-up')
                                 ->schema([
                                     FileUpload::make('file')
-                                        ->label('Upload File')
+                                        ->label('Upload Your Work')
                                         ->acceptedFileTypes([
                                             'application/pdf',
                                             'application/msword',
-                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                                         ])
                                         ->maxSize(10240)
                                         ->required()
-                                        ->directory('submissions')
+                                        ->directory('submissions/temp')
                                         ->preserveFilenames()
-                                        ->disk('local')
+                                        ->disk('public')
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF, DOC, DOCX. Max size: 2MB.'),
+                                        ->helperText('Accepted: PDF, DOC, DOCX — Max 10MB'),
 
                                     Textarea::make('notes')
-                                        ->label('Student Notes (Optional)')
+                                        ->label('Notes (Optional)')
                                         ->rows(3)
-                                        ->placeholder('Add any notes or comments...'),
+                                        ->placeholder('Any notes or comments for your reviewer...'),
                                 ]),
 
                             Wizard\Step::make('Confirm Submission')
@@ -131,28 +125,50 @@ class UpcomingDeadlinesWidget extends BaseWidget
                                         ->content(fn ($get) => $get('notes') ?: 'No notes provided'),
 
                                     Checkbox::make('confirm_submission')
-                                        ->label('I confirm that I want to submit this assignment')
+                                        ->label('I confirm that this is my own work and I want to submit this assignment')
                                         ->required()
                                         ->accepted(),
                                 ]),
-                        ])
+                        ]),
                     ])
                     ->action(function ($record, $data) {
+                        $context = [
+                            'candidate_id'    => Auth::id(),
+                            'candidate_email' => Auth::user()?->email,
+                            'task_id'         => $record->id,
+                            'task_title'      => $record->title,
+                            'original_name'   => $data['original_file_name'] ?? 'unknown',
+                            'ip'              => request()->ip(),
+                        ];
+
+                        Log::info('Submission: candidate initiated file submission', array_merge($context, [
+                            'event' => 'submission_attempt',
+                        ]));
+
                         try {
                             $fileDetails = static::processSubmissionFile($data, $record);
 
-                            Submission::create([
-                                'task_id' => $record->id,
-                                'student_id' => Auth::id(),
-                                'content_text' => null,
-                                'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'].'/'.$fileDetails['file_name'],
-                                'file_size' => $fileDetails['file_size'],
-                                'file_type' => $fileDetails['file_type'],
+                            $submission = Submission::create([
+                                'task_id'       => $record->id,
+                                'student_id'    => Auth::id(),
+                                'content_text'  => null,
+                                'file_name'     => $fileDetails['file_name'],
+                                'file_path'     => $fileDetails['file_path'],
+                                'file_size'     => $fileDetails['file_size'],
+                                'file_type'     => $fileDetails['file_type'],
                                 'student_notes' => $data['notes'] ?? null,
-                                'submitted_at' => now(),
-                                'status' => SubmissionTypes::PENDING_REVIEW->value,
+                                'submitted_at'  => now(),
+                                'status'        => SubmissionTypes::PENDING_REVIEW->value,
                             ]);
+
+                            Log::info('Submission: file submitted successfully', array_merge($context, [
+                                'event'         => 'submission_success',
+                                'submission_id' => $submission->id,
+                                'file_path'     => $fileDetails['file_path'],
+                                'file_name'     => $fileDetails['file_name'],
+                                'file_size_kb'  => round($fileDetails['file_size'] / 1024, 1),
+                                'file_type'     => $fileDetails['file_type'],
+                            ]));
 
                             Notification::make()
                                 ->title('Submission Successful')
@@ -160,58 +176,98 @@ class UpcomingDeadlinesWidget extends BaseWidget
                                 ->success()
                                 ->send();
 
-                            return ['refresh' => true, 'close' => true];
                         } catch (\Exception $e) {
+                            Log::error('Submission: error during file submission', array_merge($context, [
+                                'event' => 'submission_error',
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                            ]));
+
                             Notification::make()
                                 ->title('Submission Failed')
-                                ->body('Error: ' . $e->getMessage())
+                                ->body('An error occurred: ' . $e->getMessage())
                                 ->danger()
                                 ->send();
                         }
                     }),
             ])
             ->paginated(false)
-            ->emptyStateHeading('No Pending Tasks')
-            ->emptyStateDescription('Great job! You\'re all caught up with your assignments.')
+            ->emptyStateHeading('All Caught Up!')
+            ->emptyStateDescription('You have no pending tasks. Great work!')
             ->emptyStateIcon('heroicon-o-check-circle');
     }
 
-    public static function processSubmissionFile($data, $record, $isResubmit = false, $existingSubmission = null): array
-    {
-        $sectionId = $record->section->id;
-        $taskId = $record->id;
-        $userId = Auth::id();
-        $userName = str_replace(' ', '_', Auth::user()->name);
-        $timestamp = now()->format('Y-m-d_H-i-s');
+    public static function processSubmissionFile(
+        array $data,
+        Task  $record,
+        bool  $isResubmit              = false,
+        ?Submission $existingSubmission = null
+    ): array {
+        $sectionId    = $record->section->id;
+        $taskId       = $record->id;
+        $userName     = str_replace(' ', '_', Auth::user()->name);
+        $timestamp    = now()->format('Y-m-d_H-i-s');
 
-        // Define file paths
-        $tempPath = $data['file'];
-        $finalDir = "submissions/{$sectionId}/{$taskId}";
-        $originalName = str_replace(' ', '_', $data['original_file_name']);
+        $tempPath     = $data['file'];
+        $finalDir     = "submissions/{$sectionId}/{$taskId}";
+        $originalName = str_replace(' ', '_', $data['original_file_name'] ?? basename($tempPath));
         $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
-        $newPath = "{$finalDir}/{$sanitizedName}";
+        $newPath      = "{$finalDir}/{$sanitizedName}";
 
-        // Ensure directory exists
+        Log::debug('Submission file processing: starting move', [
+            'event'      => 'submission_file_move_start',
+            'temp_path'  => $tempPath,
+            'final_path' => $newPath,
+            'disk'       => 'public',
+            'candidate_id' => Auth::id(),
+            'task_id'    => $taskId,
+        ]);
+
         Storage::disk('public')->makeDirectory($finalDir);
 
-        // Move file from temp to permanent location
-        if (!Storage::disk('public')->exists($tempPath)) {
-            throw new \Exception("Uploaded file not found at: {$tempPath}");
+        if (! Storage::disk('public')->exists($tempPath)) {
+            Log::error('Submission file processing: temp file not found', [
+                'event'     => 'submission_file_not_found',
+                'temp_path' => $tempPath,
+                'candidate_id' => Auth::id(),
+                'task_id'   => $taskId,
+            ]);
+            throw new \RuntimeException("Uploaded file not found at: {$tempPath}");
         }
 
         Storage::disk('public')->move($tempPath, $newPath);
 
-        // Delete old file on resubmit
-        if ($isResubmit && $existingSubmission && Storage::exists($existingSubmission->file_path)) {
-            Storage::delete($existingSubmission->file_path);
+        $fileSize = Storage::disk('public')->size($newPath);
+        $fileType = Storage::disk('public')->mimeType($newPath);
+
+        Log::debug('Submission file processing: move complete', [
+            'event'         => 'submission_file_move_complete',
+            'final_path'    => $newPath,
+            'file_size_kb'  => round($fileSize / 1024, 1),
+            'file_type'     => $fileType,
+            'candidate_id'  => Auth::id(),
+            'task_id'       => $taskId,
+        ]);
+
+        // Clean up old file on resubmission
+        if ($isResubmit && $existingSubmission) {
+            $oldPath = $existingSubmission->getStoragePath();
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+                Log::info('Submission file processing: old file deleted on resubmit', [
+                    'event'         => 'submission_old_file_deleted',
+                    'old_path'      => $oldPath,
+                    'submission_id' => $existingSubmission->id,
+                    'candidate_id'  => Auth::id(),
+                ]);
+            }
         }
 
-        // Return file details
         return [
             'file_name' => $sanitizedName,
             'file_path' => $finalDir,
-            'file_size' => Storage::disk('public')->size($newPath),
-            'file_type' => Storage::disk('public')->mimeType($newPath),
+            'file_size' => $fileSize,
+            'file_type' => $fileType,
         ];
     }
 }

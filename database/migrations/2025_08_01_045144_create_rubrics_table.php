@@ -25,7 +25,7 @@ return new class extends Migration
             $table->index(['task_id', 'order_index']);
         });
 
-        Artisan::call('db:seed', ['--class' => 'RubricSeeder']);
+//        Artisan::call('db:seed', ['--class' => 'RubricSeeder']);
     }
 
     /**
