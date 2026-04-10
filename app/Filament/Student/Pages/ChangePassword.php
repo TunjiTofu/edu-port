@@ -10,19 +10,18 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
-use Illuminate\View\View;
 
 class ChangePassword extends Page implements HasForms
 {
     use InteractsWithForms;
 
-    protected static ?string $navigationIcon = 'heroicon-o-key';
-    protected static string $view = 'filament.student.pages.force-change-password';
-    protected static ?string $title = 'Change Password';
-    protected static ?string $slug = 'change-password';
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?string $navigationIcon           = 'heroicon-o-key';
+    protected static string  $view                     = 'filament.student.pages.force-change-password';
+    protected static ?string $title                    = 'Change Password';
+    protected static ?string $slug                     = 'change-password';
+    protected static bool    $shouldRegisterNavigation = false;
 
     public ?array $data = [];
 
@@ -46,82 +45,92 @@ class ChangePassword extends Page implements HasForms
                     ->label('New Password')
                     ->password()
                     ->required()
-                    ->rule(Password::default()
-                        ->uncompromised() // This checks against common/pwned passwords
-                        ->min(8)
-                        ->letters()
-                        ->mixedCase()
-                        ->numbers()
-                        ->symbols()
+                    ->rule(
+                        Password::default()
+                            ->uncompromised()
+                            ->min(8)
+                            ->letters()
+                            ->mixedCase()
+                            ->numbers()
+                            ->symbols()
                     )
                     ->different('current_password')
-                    ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                     ->revealable()
                     ->validationMessages([
-                        'uncompromised' => 'The password you entered is too common or has been compromised. Please choose a different password.',
+                        'uncompromised' => 'This password has been compromised. Please choose a different one.',
                     ]),
 
                 TextInput::make('password_confirmation')
                     ->label('Confirm New Password')
                     ->password()
-                    ->required()
                     ->revealable()
+                    ->required()
                     ->same('password')
                     ->dehydrated(false),
             ])
             ->statePath('data');
     }
 
+    protected function getFormActions(): array
+    {
+        return [
+            Action::make('updatePassword')
+                ->label('Update Password')
+                ->submit('updatePassword'),
+        ];
+    }
+
     public function updatePassword(): void
     {
+        $user = Auth::user();
+
+        Log::info('ChangePassword: candidate initiated password change', [
+            'event'      => 'candidate_password_change_attempt',
+            'user_id'    => $user->id,
+            'user_email' => $user->email,
+            'is_first_change' => is_null($user->password_updated_at),
+            'ip'         => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
+
+        // Validate form — this also checks currentPassword() rule
         $data = $this->form->getState();
 
-        $user = Auth::user();
         $user->update([
-            'password' => $data['password'],
+            'password'            => $data['password'],
             'password_updated_at' => now(),
+        ]);
+
+        Log::info('ChangePassword: candidate password updated successfully', [
+            'event'      => 'candidate_password_change_success',
+            'user_id'    => $user->id,
+            'user_email' => $user->email,
+            'ip'         => request()->ip(),
         ]);
 
         Notification::make()
             ->title('Password updated successfully!')
-            ->body('You will be redirected to login with your new password.')
+            ->body('Please log in again with your new password.')
             ->success()
-            ->persistent() // Make notification stay longer
+            ->persistent()
             ->send();
 
-        // Add JavaScript to redirect after showing a notification
-        $this->dispatch('redirect-after-delay', url: '/student/login');
+        Auth::logout();
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+
+        $this->redirect('/student/login');
     }
 
     public function getTitle(): string
     {
-        $user = Auth::user();
-
-        if (!$user->password_updated_at) {
-            return 'Change Default Password';
-        }
-
-        return 'Change Password';
+        return Auth::user()?->password_updated_at
+            ? 'Change Password'
+            : 'Change Default Password';
     }
-
-//    public function getHeading(): string
-//    {
-//        $user = Auth::user();
-//
-//        if (!$user->password_updated_at) {
-//            return 'You must change your default password before continuing';
-//        }
-//
-//        return 'Change Password';
-//    }
 
     public function getHeading(): string
     {
         return '';
-    }
-
-    public function getHeader(): ?View
-    {
-        return null;
     }
 }

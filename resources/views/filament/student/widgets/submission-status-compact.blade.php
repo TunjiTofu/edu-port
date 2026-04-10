@@ -1,40 +1,33 @@
 @php
     use App\Enums\SubmissionTypes;
-    $status = match(true) {
-        $getRecord()->status === SubmissionTypes::COMPLETED->value => SubmissionTypes::COMPLETED->value,
-        $getRecord()->status === SubmissionTypes::PENDING_SUBMISSION->value => SubmissionTypes::PENDING_SUBMISSION->value,
-        $getRecord()->status === SubmissionTypes::PENDING_REVIEW->value => SubmissionTypes::PENDING_REVIEW->value,
-        $getRecord()->status === SubmissionTypes::FLAGGED->value => SubmissionTypes::FLAGGED->value,
-        $getRecord()->status === SubmissionTypes::NEEDS_REVISION->value => SubmissionTypes::NEEDS_REVISION->value,
-        $getRecord()->status === SubmissionTypes::UNDER_REVIEW->value => SubmissionTypes::UNDER_REVIEW->value,
-        $getRecord()->status === SubmissionTypes::SUBMITTED->value => SubmissionTypes::SUBMITTED->value,
-        default => SubmissionTypes::PENDING_REVIEW->value
-    };
 
-    $color = match($status) {
-        SubmissionTypes::COMPLETED->value => 'success',
+    // FIX: Removed the redundant match(true) block that mapped every SubmissionTypes
+    // value back to itself — a complete no-op. Replaced with a single null-safe
+    // fallback assignment.
+    $status = $getRecord()->status ?? SubmissionTypes::PENDING_REVIEW->value;
+
+    $color = match ($status) {
+        SubmissionTypes::COMPLETED->value        => 'success',
         SubmissionTypes::PENDING_SUBMISSION->value => 'warning',
-        SubmissionTypes::PENDING_REVIEW->value => 'info',
-        SubmissionTypes::FLAGGED->value => 'danger',
-        SubmissionTypes::NEEDS_REVISION->value => 'warning',
-        SubmissionTypes::UNDER_REVIEW->value => 'gray',
-        SubmissionTypes::SUBMITTED->value => 'gray',
-        default => 'gray'
+        SubmissionTypes::PENDING_REVIEW->value    => 'info',
+        SubmissionTypes::FLAGGED->value           => 'danger',
+        SubmissionTypes::NEEDS_REVISION->value    => 'warning',
+        SubmissionTypes::UNDER_REVIEW->value      => 'gray',
+        SubmissionTypes::SUBMITTED->value         => 'gray',
+        default                                   => 'gray',
     };
 
-    $label = match($status) {
-//        'graded' => 'Graded',
-//        'reviewed' => 'Under Review',
-//        'submitted' => 'Submitted',
-//
-        SubmissionTypes::COMPLETED->value => 'Mark as Completed',
+    $label = match ($status) {
+        // FIX: Changed 'Mark as Completed' → 'Completed'.
+        // This is a display badge, not an action button.
+        SubmissionTypes::COMPLETED->value         => 'Completed',
         SubmissionTypes::PENDING_SUBMISSION->value => 'Pending Submission',
-        SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
-        SubmissionTypes::FLAGGED->value => 'Flagged',
-        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
-        SubmissionTypes::UNDER_REVIEW->value => 'Still in Review',
-        SubmissionTypes::SUBMITTED->value => 'Submitted',
-        default => 'Unknown'
+        SubmissionTypes::PENDING_REVIEW->value    => 'Pending Review',
+        SubmissionTypes::FLAGGED->value           => 'Flagged',
+        SubmissionTypes::NEEDS_REVISION->value    => 'Needs Revision',
+        SubmissionTypes::UNDER_REVIEW->value      => 'Under Review',
+        SubmissionTypes::SUBMITTED->value         => 'Submitted',
+        default                                   => 'Unknown',
     };
 @endphp
 

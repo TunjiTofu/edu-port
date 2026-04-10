@@ -4,66 +4,73 @@ namespace App\Filament\Student\Resources;
 
 use App\Enums\SubmissionTypes;
 use App\Filament\Student\Resources\TaskResource\Pages;
-use App\Filament\Student\Resources\TaskResource\RelationManagers;
 use App\Models\Submission;
 use App\Models\Task;
-use Carbon\Carbon;
-use Exception;
-use Filament\Actions\Action;
-use Filament\Forms;
-use Filament\Forms\Form;
+use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Wizard;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\HtmlString;
 
 class TaskResource extends Resource
 {
-    protected static ?string $model = Task::class;
-    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+    protected static ?string $model           = Task::class;
+    protected static ?string $navigationIcon  = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationLabel = 'My Tasks';
     protected static ?string $navigationGroup = 'Submissions';
-    protected static ?int $navigationSort = 2;
+    protected static ?int    $navigationSort  = 1;
 
-    public static function canCreate(): bool
-    {
-        return false;
-    }
+    public static function canViewAny(): bool  { return Auth::user()?->isStudent(); }
+    public static function canCreate(): bool   { return false; }
+    public static function canEdit($record): bool   { return false; }
+    public static function canDelete($record): bool { return false; }
 
-    public static function canViewAny(): bool
-    {
-        return Auth::user()?->isStudent();
-    }
+    // ── Query ──────────────────────────────────────────────────────────────
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->where('is_active', true)
-            ->whereHas('section.trainingProgram.enrollments', function ($query) {
-                $query->where('student_id', Auth::user()->id)
-                    ->where('status', 'active');
-            })
-            ->with(['section.trainingProgram', 'submissions' => function ($query) {
-                $query->where('student_id', Auth::user()->id);
-            }])
-            ->orderBy('section_id', 'asc')
-            ->orderBy('order_index', 'asc');
+            ->whereHas('section.trainingProgram.enrollments', fn ($q) =>
+            $q->where('student_id', Auth::id())
+            )
+            ->with([
+                'section.trainingProgram',
+                'submissions' => fn ($q) => $q->where('student_id', Auth::id())->with('review'),
+            ])
+            ->orderBy('due_date');
     }
 
-    public static function form(Form $form): Form
+    // ── Navigation Badge ───────────────────────────────────────────────────
+
+    public static function getNavigationBadge(): ?string
     {
-        return $form
-            ->schema([
-                //
-            ]);
+        $pending = Task::where('is_active', true)
+            ->whereHas('section.trainingProgram.enrollments', fn ($q) =>
+            $q->where('student_id', Auth::id())
+            )
+            ->whereDoesntHave('submissions', fn ($q) =>
+            $q->where('student_id', Auth::id())
+            )
+            ->where(fn ($q) => $q->where('due_date', '>=', now())->orWhereNull('due_date'))
+            ->count();
+
+        return $pending > 0 ? (string) $pending : null;
     }
 
+    public static function getNavigationBadgeColor(): ?string { return 'warning'; }
+
+    // ── Table ──────────────────────────────────────────────────────────────
 
     public static function table(Table $table): Table
     {
@@ -71,619 +78,424 @@ class TaskResource extends Resource
             ->columns([
                 Tables\Columns\Layout\Stack::make([
                     Tables\Columns\Layout\Split::make([
+                        // Status icon pill
+                        Tables\Columns\TextColumn::make('status_icon')
+                            ->label('')
+                            ->getStateUsing(function ($record) {
+                                $submission = $record->submissions->first();
+                                if (! $submission) {
+                                    return $record->due_date?->isPast() ? '🔴' : '📝';
+                                }
+                                return match ($submission->status) {
+                                    SubmissionTypes::COMPLETED->value      => '✅',
+                                    SubmissionTypes::PENDING_REVIEW->value => '⏳',
+                                    SubmissionTypes::UNDER_REVIEW->value   => '🔍',
+                                    SubmissionTypes::NEEDS_REVISION->value => '⚠️',
+                                    SubmissionTypes::FLAGGED->value        => '🚩',
+                                    default                                => '📤',
+                                };
+                            })
+                            ->grow(false)
+                            ->extraAttributes(['class' => 'text-2xl leading-none pt-1']),
+
                         Tables\Columns\Layout\Stack::make([
+                            // Task title
                             Tables\Columns\TextColumn::make('title')
                                 ->label('')
-                                ->searchable()
-                                ->sortable()
                                 ->weight('bold')
-                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large)
-                                ->formatStateUsing(function ($state) {
-                                    return strlen($state) > 50 ? substr($state, 0, 50) . '...' : $state;
-                                }),
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Medium)
+                                ->searchable(),
 
+                            // Program > Section breadcrumb
                             Tables\Columns\TextColumn::make('section.name')
                                 ->label('')
+                                ->formatStateUsing(fn ($state, $record) =>
+                                    ($record->section?->trainingProgram?->name ?? '') . ' › ' . $state
+                                )
                                 ->color('gray')
-                                ->formatStateUsing(fn($state) => 'Section: ' . $state),
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::ExtraSmall),
 
-                            Tables\Columns\TextColumn::make('')
-                                ->label('')
-                                ->formatStateUsing(fn() => '')
-                                ->extraAttributes(['style' => 'height: 8px;']),
+                            Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
+                                ->schema([
+                                    // Due date badge
+                                    Tables\Columns\TextColumn::make('due_date')
+                                        ->badge()
+                                        ->color(function ($state, $record) {
+                                            if (! $state) return 'gray';
+                                            $submitted = $record->submissions->isNotEmpty();
+                                            if ($submitted) return 'success';
+                                            $days = now()->diffInDays($state, false);
+                                            return match (true) {
+                                                $days < 0  => 'danger',
+                                                $days <= 3 => 'warning',
+                                                default    => 'info',
+                                            };
+                                        })
+                                        ->formatStateUsing(function ($state, $record) {
+                                            if (! $state) return '🗓 No deadline';
+                                            $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                                            $submitted = $record->submissions->isNotEmpty();
+                                            if ($submitted) return '✅ Submitted';
+                                            $days = now()->diffInDays($carbon, false);
+                                            return match (true) {
+                                                $days < 0  => '🔴 Overdue — ' . $carbon->format('M j'),
+                                                $days == 0 => '⚠️ Due today',
+                                                $days <= 3 => "⚠️ {$days}d left",
+                                                default    => '📅 ' . $carbon->format('M j, Y'),
+                                            };
+                                        }),
 
-                            Tables\Columns\TextColumn::make('due_date')
-                                ->label('Due Date')
-                                ->date()
-                                ->badge()
-                                ->color(function ($record) {
-                                    if (!$record->due_date) return 'gray';
-
-                                    $daysLeft = now()->diffInDays(Carbon::parse($record->due_date), false);
-                                    return match (true) {
-                                        $daysLeft < 0 => 'danger',      // Past due
-                                        $daysLeft == 0 => 'danger',     // Due today
-                                        $daysLeft <= 3 => 'warning',   // Due in 1-3 days
-                                        default => 'success'            // Due in more than 3 days
-                                    };
-                                })
-                                ->formatStateUsing(function ($record) {
-                                    return $record->due_date
-                                        ? 'Due: ' . Carbon::parse($record->due_date)->format('M d, Y')
-                                        : 'Due: No due date';
-                                }),
-
-                            Tables\Columns\TextColumn::make('')
-                                ->label('')
-                                ->formatStateUsing(fn() => '')
-                                ->extraAttributes(['style' => 'height: 8px;']),
-
-                            Tables\Columns\TextColumn::make('submission_status')
-                                ->label('Status')
-                                ->badge()
-                                ->getStateUsing(function ($record) {
-                                    $submission = $record->submissions
-                                        ->firstWhere('student_id', Auth::user()->id);
-
-                                    return $submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value;
-                                })
-                                ->color(function ($record) {
-                                    $submission = $record->submissions
-                                        ->firstWhere('student_id', Auth::user()->id);
-
-                                    return match ($submission ? $submission->status : SubmissionTypes::PENDING_SUBMISSION->value) {
-                                        SubmissionTypes::PENDING_REVIEW->value => 'gray',
-                                        SubmissionTypes::UNDER_REVIEW->value => 'info',
-                                        SubmissionTypes::NEEDS_REVISION->value => 'warning',
-                                        SubmissionTypes::COMPLETED->value => 'success',
-                                        SubmissionTypes::FLAGGED->value => 'danger',
-                                        default => 'danger',
-                                    };
-                                })
-                                ->formatStateUsing(function ($record) {
-                                    $submission = $record->submissions
-                                        ->firstWhere('student_id', Auth::user()->id);
-
-                                    $status = $submission
-                                        ? str_replace('_', ' ', $submission->status)
-                                        : str_replace('_', ' ', SubmissionTypes::PENDING_SUBMISSION->value);
-
-                                    return 'Status: ' . str($status)->title();
-                                }),
-                        ])->grow(true),
-                    ])->from('md'),
-                ])->space(3),
+                                    // Submission status badge
+                                    Tables\Columns\TextColumn::make('submission_status')
+                                        ->label('Status')
+                                        ->badge()
+                                        ->getStateUsing(fn ($record) =>
+                                            $record->submissions->first()?->status ?? 'not_submitted'
+                                        )
+                                        ->color(fn ($state) => match ($state) {
+                                            SubmissionTypes::COMPLETED->value      => 'success',
+                                            SubmissionTypes::PENDING_REVIEW->value => 'info',
+                                            SubmissionTypes::UNDER_REVIEW->value   => 'warning',
+                                            SubmissionTypes::NEEDS_REVISION->value => 'danger',
+                                            SubmissionTypes::FLAGGED->value        => 'danger',
+                                            'not_submitted'                         => 'gray',
+                                            default                                 => 'gray',
+                                        })
+                                        ->formatStateUsing(fn ($state) => match ($state) {
+                                            SubmissionTypes::COMPLETED->value      => 'Completed',
+                                            SubmissionTypes::PENDING_REVIEW->value => 'Awaiting Review',
+                                            SubmissionTypes::UNDER_REVIEW->value   => 'Under Review',
+                                            SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
+                                            SubmissionTypes::FLAGGED->value        => 'Flagged',
+                                            'not_submitted'                         => 'Not Submitted',
+                                            default                                 => ucfirst(str_replace('_', ' ', $state)),
+                                        }),
+                                ]),
+                        ])->space(1)->grow(true),
+                    ])->from('sm'),
+                ])->space(2),
             ])
-            ->contentGrid([
-                'md' => 1,
-                'xl' => 1,
-            ])
+            ->contentGrid(['default' => 1, 'md' => 2])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Submission Status')
                     ->options([
-                        SubmissionTypes::PENDING_SUBMISSION->value => 'Pending Submission',
-                        SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
-                        SubmissionTypes::UNDER_REVIEW->value => 'Under Review',
-                        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
-                        SubmissionTypes::COMPLETED->value => 'Completed',
-                        SubmissionTypes::FLAGGED->value => 'Flagged',
+                        'not_submitted' => 'Not Submitted',
+                        SubmissionTypes::PENDING_REVIEW->value => 'Awaiting Review',
+                        SubmissionTypes::UNDER_REVIEW->value   => 'Under Review',
+                        SubmissionTypes::COMPLETED->value      => 'Completed',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
-                        return match ($data['value'] ?? null) {
-                            SubmissionTypes::PENDING_SUBMISSION->value => $query->whereDoesntHave('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id);
-                            }),
-                            SubmissionTypes::COMPLETED->value => $query->whereHas('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id)
-                                    ->where('status', SubmissionTypes::COMPLETED->value);
-                            }),
-                            SubmissionTypes::PENDING_REVIEW->value => $query->whereHas('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id)
-                                    ->where('status', SubmissionTypes::PENDING_REVIEW->value);
-                            }),
-                            SubmissionTypes::UNDER_REVIEW->value => $query->whereHas('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id)
-                                    ->where('status', SubmissionTypes::UNDER_REVIEW->value);
-                            }),
-                            SubmissionTypes::NEEDS_REVISION->value => $query->whereHas('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id)
-                                    ->where('status', SubmissionTypes::NEEDS_REVISION->value);
-                            }),
-                            SubmissionTypes::FLAGGED->value => $query->whereHas('submissions', function ($q) {
-                                $q->where('student_id', Auth::user()->id)
-                                    ->where('status', SubmissionTypes::FLAGGED->value);
-                            }),
-
-                            default => $query,
-                        };
+                        if (! $data['value']) return $query;
+                        if ($data['value'] === 'not_submitted') {
+                            return $query->whereDoesntHave('submissions', fn ($q) =>
+                            $q->where('student_id', Auth::id())
+                            );
+                        }
+                        return $query->whereHas('submissions', fn ($q) =>
+                        $q->where('student_id', Auth::id())->where('status', $data['value'])
+                        );
                     }),
+
+                Tables\Filters\Filter::make('overdue')
+                    ->label('Overdue Only')
+                    ->toggle()
+                    ->query(fn (Builder $query) =>
+                    $query->whereNotNull('due_date')
+                        ->where('due_date', '<', now())
+                        ->whereDoesntHave('submissions', fn ($q) =>
+                        $q->where('student_id', Auth::id())
+                        )
+                    ),
             ])
             ->actions([
-                // View Task Action - Shows task details and submission options
-                Tables\Actions\Action::make('view_task')
+                Tables\Actions\ViewAction::make()
                     ->label('View Task')
                     ->icon('heroicon-o-eye')
-                    ->color('primary')
-                    ->modalHeading('Task Details')
-                    ->modalWidth('7xl')
-                    ->modalContent(function ($record) {
-                        $submission = $record->submissions()
-                            ->where('student_id', Auth::id())
-                            ->first();
+                    ->button()
+                    ->color('primary'),
 
-                        $rubrics = $record->rubrics()->active()->ordered()->get();
-//                        dd($submission->review->getRubricsSummary());
-                        return view('filament.student.task.task-details', [
-                            'task' => $record,
-                            'submission' => $submission,
-                            'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null,
-                            'hasSubmission' => (bool) $submission,
-                            'rubrics' => $rubrics,
-                            'rubricReview' => $submission?->review?->getRubricsSummary(),
-//                            'canSubmit' => !$submission,
-//                            'canResubmit' => $submission && $submission->status !== SubmissionTypes::COMPLETED->value,
-
-                        ]);
-                    })
-                    ->modalActions([
-                        Action::make('download_submission')
-                            ->label('Download My Submission')
-                            ->icon('heroicon-o-arrow-down-tray')
-                            ->color('success')
-                            ->visible(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                return $submission && $submission->file_path;
-                            })
-                            ->url(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                return $submission ? static::getDownloadUrl($submission) : null;
-                            })
-                            ->openUrlInNewTab(),
-
-                        Action::make('close')
-                            ->label('Close')
-                            ->color('gray')
-                            ->close()
-                    ]),
-
-                // Submit Action
-                Tables\Actions\Action::make('submit')
+                // Quick submit directly from the list
+                Tables\Actions\Action::make('quick_submit')
                     ->label('Submit')
                     ->icon('heroicon-o-arrow-up-tray')
+                    ->button()
                     ->color('success')
-                    ->visible(function ($record) {
-                        $submission = !$record->submissions->contains('student_id', Auth::id());
-
-                        $dueDateValid = !$record->due_date ||
-                            now()->lte(Carbon::parse($record->due_date)->endOfDay());
-
-                        return $submission &&
-                            $dueDateValid;
-                    })
-
-                    ->form([
-                        Forms\Components\Wizard::make([
-                            Forms\Components\Wizard\Step::make('Upload File')
-                                ->icon('heroicon-o-document-arrow-up')
-                                ->schema([
-                                    Forms\Components\FileUpload::make('file')
-                                        ->label('Upload File')
-                                        ->acceptedFileTypes([
-                                            'application/pdf',
-                                        ])
-                                        ->maxSize(10240)
-                                        ->required()
-                                        ->directory('submissions')
-                                        ->preserveFilenames()
-                                        ->disk(config('filesystems.default'))
-                                        ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF. Max size: 2MB.'),
-
-
-                                    Forms\Components\Textarea::make('notes')
-                                        ->label('Student Notes (Optional)')
-                                        ->rows(3)
-                                        ->placeholder('Add any notes or comments...'),
-                                ]),
-
-                            Forms\Components\Wizard\Step::make('Confirm Submission')
-                                ->icon('heroicon-o-check-circle')
-                                ->schema([
-                                    Forms\Components\Placeholder::make('confirmation')
-                                        ->label('')
-                                        ->content(function ($get) {
-                                            $fileName = $get('original_file_name');
-                                            $notes = $get('notes');
-
-                                            return new \Illuminate\Support\HtmlString('
-                                <div class="text-center p-6">
-                                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-                                        <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
-                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Submit</h3>
-                                </div>
-                            ');
-                                        }),
-
-                                    Forms\Components\Checkbox::make('confirm_submission')
-                                        ->label('I confirm that I want to submit this assignment')
-                                        ->required()
-                                        ->accepted(),
-                                ]),
-                        ])
-                    ])
-                    ->action(function ($record, $data) {
-                        try {
-                            $fileDetails = static::processSubmissionFile($data, $record);
-
-                            Submission::create([
-                                'task_id' => $record->id,
-                                'student_id' => Auth::id(),
-                                'content_text' => null,
-                                'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'],
-                                'file_size' => $fileDetails['file_size'],
-                                'file_type' => $fileDetails['file_type'],
-                                'student_notes' => $data['notes'] ?? null,
-                                'submitted_at' => now(),
-                                'status' => SubmissionTypes::PENDING_REVIEW->value,
-                            ]);
-
-                            Notification::make()
-                                ->title('Submission Successful')
-                                ->body('Your assignment has been submitted successfully.')
-                                ->success()
-                                ->send();
-
-                            return ['refresh' => true, 'close' => true];
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('Submission Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                // Resubmit Action
-                Tables\Actions\Action::make('resubmit')
-                    ->label('Resubmit')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('warning')
-                    ->visible(fn($record) => $record->submissions->contains('student_id', Auth::id()) &&
-                        $record->submissions->where('student_id', Auth::id())->first()->status !== SubmissionTypes::COMPLETED->value)
-                    ->form([
-                        Forms\Components\Wizard::make([
-                            Forms\Components\Wizard\Step::make('Upload New File')
-                                ->icon('heroicon-o-document-arrow-up')
-                                ->schema([
-                                    Forms\Components\FileUpload::make('file')
-                                        ->label('Upload New File')
-                                        ->acceptedFileTypes([
-                                            'application/pdf',
-//                                            'application/msword',
-//                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                                        ])
-                                        ->maxSize(10240)
-                                        ->required()
-                                        ->directory('submissions')
-                                        ->preserveFilenames()
-                                        ->disk('local')
-                                        ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted formats: PDF. Max size: 2MB.'),
-
-                                    Forms\Components\Textarea::make('notes')
-                                        ->label('Student Notes (Optional)')
-                                        ->rows(3)
-                                        ->placeholder('Add any notes or comments...'),
-                                ]),
-
-                            Forms\Components\Wizard\Step::make('Confirm Resubmission')
-                                ->icon('heroicon-o-exclamation-triangle')
-                                ->schema([
-                                    Forms\Components\Placeholder::make('resubmit_confirmation')
-                                        ->label('')
-                                        ->content(function ($get) {
-                                            $fileName = $get('original_file_name');
-                                            $notes = $get('notes');
-
-                                            return new \Illuminate\Support\HtmlString('
-                                <div class="text-center p-6">
-                                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
-                                        <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                        </svg>
-                                    </div>
-                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Ready to Resubmit</h3>
-                                </div>
-                            ');
-                                        }),
-
-                                    Forms\Components\Checkbox::make('confirm_resubmission')
-                                        ->label('I understand this will replace my current submission')
-                                        ->required()
-                                        ->accepted(),
-                                ]),
-                        ])
-                    ])
-                    ->action(function ($record, $data) {
-                        try {
-                            $userId = Auth::id();
-                            $existingSubmission = $record->submissions->where('student_id', $userId)->first();
-
-                            if (!$existingSubmission) {
-                                throw new Exception("No existing submission found");
-                            }
-
-                            $fileDetails = static::processSubmissionFile($data, $record, true, $existingSubmission);
-
-                            $existingSubmission->update([
-                                'file_name' => $fileDetails['file_name'],
-                                'file_path' => $fileDetails['file_path'],
-                                'file_size' => $fileDetails['file_size'],
-                                'file_type' => $fileDetails['file_type'],
-                                'student_notes' => $data['notes'] ?? null,
-                                'submitted_at' => now(),
-                                'status' => SubmissionTypes::PENDING_REVIEW->value,
-                            ]);
-
-                            Notification::make()
-                                ->title('Resubmission Successful')
-                                ->body('Your assignment has been resubmitted successfully.')
-                                ->success()
-                                ->send();
-
-                            return ['refresh' => true, 'close' => true];
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('Resubmission Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-                Tables\Actions\Action::make('view_submission')
-                    ->label('View Submission')
-                    ->icon('heroicon-o-eye')
-                    ->color('info')
-                    ->visible(fn($record) => $record->submissions()->where('student_id', Auth::id())->exists())
-                    ->modalContent(function ($record) {
-                        $submission = $record->submissions()
-                            ->where('student_id', Auth::id())
-                            ->first();
-
-                        return view('filament.student.view-submission.submission-details', [
-                            'submission' => $submission,
-                            'record' => $record,
-                            'downloadUrl' => $submission ? static::getDownloadUrl($submission) : null
-                        ]);
-                    })
-                    ->modalActions([
-                        Action::make('download')
-                            ->label('Download File')
-                            ->icon('heroicon-o-arrow-down-tray')
-                            ->color('success')
-                            ->visible(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                return $submission && $submission->file_path;
-                            })
-                            ->url(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                return $submission ? static::getDownloadUrl($submission) : null;
-                            })
-                            ->openUrlInNewTab(),
-
-                        Action::make('edit_submission')
-                            ->label('Edit Submission')
-                            ->icon('heroicon-o-pencil')
-                            ->color('warning')
-                            ->visible(function ($record) {
-                                $submission = $record->submissions()
-                                    ->where('student_id', Auth::id())
-                                    ->first();
-                                // Only show if submission exists and deadline hasn't passed
-                                return $submission &&
-                                    $record->deadline &&
-                                    now()->isBefore($record->deadline);
-                            })
-                            ->url(function ($record) {
-                                return route('submission.edit', $record->id);
-                            }),
-
-                        Action::make('close')
-                            ->label('Close')
-                            ->color('gray')
-                            ->close(),
-                    ])
+                    ->visible(fn ($record) => $record->submissions->isEmpty())
+                    ->form(fn () => static::submissionWizard())
+                    ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
             ])
-            ->bulkActions([]);
+            ->defaultSort('due_date')
+            ->emptyStateHeading('No Tasks Available')
+            ->emptyStateDescription("You don't have any tasks yet. Enroll in a program to get started.")
+            ->emptyStateIcon('heroicon-o-clipboard-document-list');
     }
 
+    // ── Infolist (View Task) ───────────────────────────────────────────────
 
-    public static function getRelations(): array
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                // Task header
+                Infolists\Components\Section::make()
+                    ->schema([
+                        Infolists\Components\Grid::make(['default' => 1, 'sm' => 3])
+                            ->schema([
+                                Infolists\Components\TextEntry::make('section.trainingProgram.name')
+                                    ->label('Program')
+                                    ->badge()->color('info'),
+
+                                Infolists\Components\TextEntry::make('section.name')
+                                    ->label('Section')
+                                    ->badge()->color('gray'),
+
+                                Infolists\Components\TextEntry::make('due_date')
+                                    ->label('Due Date')
+                                    ->badge()
+                                    ->color(fn ($state) =>
+                                    $state && $state->isPast() ? 'danger' : 'success'
+                                    )
+                                    ->formatStateUsing(fn ($state) => $state
+                                        ? $state->format('M j, Y')
+                                        : 'No deadline'
+                                    ),
+                            ]),
+
+                        Infolists\Components\TextEntry::make('title')
+                            ->label('')
+                            ->size('lg')
+                            ->weight('bold')
+                            ->columnSpanFull(),
+
+                        Infolists\Components\TextEntry::make('description')
+                            ->label('Task Description')
+                            ->html()
+                            ->prose()
+                            ->columnSpanFull()
+                            ->visible(fn ($record) => ! empty($record->description)),
+
+                        Infolists\Components\TextEntry::make('instructions')
+                            ->label('Instructions')
+                            ->html()
+                            ->prose()
+                            ->columnSpanFull()
+                            ->visible(fn ($record) => ! empty($record->instructions)),
+                    ]),
+
+                // Rubrics (evaluation criteria)
+                Infolists\Components\Section::make('Evaluation Criteria')
+                    ->icon('heroicon-o-star')
+                    ->description('Your submission will be assessed against these criteria.')
+                    ->collapsible()
+                    ->schema([
+                        Infolists\Components\RepeatableEntry::make('activeRubrics')
+                            ->label('')
+                            ->schema([
+                                Infolists\Components\Grid::make(['default' => 1, 'sm' => 3])
+                                    ->schema([
+                                        Infolists\Components\TextEntry::make('name')
+                                            ->label('Criterion')
+                                            ->weight('medium'),
+
+                                        Infolists\Components\TextEntry::make('max_points')
+                                            ->label('Max Points')
+                                            ->badge()->color('info'),
+
+                                        Infolists\Components\TextEntry::make('description')
+                                            ->label('Description')
+                                            ->color('gray'),
+                                    ]),
+                            ])
+                            ->contained(false),
+                    ])
+                    ->visible(fn ($record) => $record->activeRubrics->isNotEmpty()),
+
+                // Submission status
+                Infolists\Components\Section::make('Your Submission')
+                    ->icon('heroicon-o-document-arrow-up')
+                    ->schema([
+                        // NOT yet submitted
+                        Infolists\Components\TextEntry::make('no_submission')
+                            ->label('')
+                            ->state('You have not submitted this task yet.')
+                            ->icon('heroicon-o-exclamation-circle')
+                            ->color('warning')
+                            ->visible(fn ($record) =>
+                            $record->submissions->where('student_id', Auth::id())->isEmpty()
+                            ),
+
+                        // Already submitted
+                        Infolists\Components\Group::make([
+                            Infolists\Components\Grid::make(['default' => 2, 'sm' => 4])
+                                ->schema([
+                                    Infolists\Components\TextEntry::make('submissions.0.status')
+                                        ->label('Status')
+                                        ->badge()
+                                        ->formatStateUsing(fn ($state) => str_replace('_', ' ', ucfirst($state))),
+
+                                    Infolists\Components\TextEntry::make('submissions.0.submitted_at')
+                                        ->label('Submitted')
+                                        ->since(),
+
+                                    Infolists\Components\TextEntry::make('submissions.0.file_name')
+                                        ->label('File'),
+
+                                    Infolists\Components\TextEntry::make('submissions.0.file_size')
+                                        ->label('Size')
+                                        ->formatStateUsing(fn ($state) =>
+                                        $state ? number_format($state / 1024, 1) . ' KB' : '—'
+                                        ),
+                                ]),
+
+                            Infolists\Components\TextEntry::make('submissions.0.student_notes')
+                                ->label('Your Notes')
+                                ->prose()
+                                ->columnSpanFull()
+                                ->visible(fn ($record) =>
+                                ! empty($record->submissions->first()?->student_notes)
+                                ),
+
+                            Infolists\Components\TextEntry::make('submissions.0.review.score')
+                                ->label('Score')
+                                ->badge()
+                                ->color('success')
+                                ->formatStateUsing(fn ($state, $record) =>
+                                $state !== null
+                                    ? $state . ' / ' . $record->max_score
+                                    : 'Not yet graded'
+                                )
+                                ->visible(fn ($record) =>
+                                $record->isResultPublished()
+                                ),
+
+                            Infolists\Components\TextEntry::make('submissions.0.review.comments')
+                                ->label('Reviewer Comments')
+                                ->prose()
+                                ->columnSpanFull()
+                                ->visible(fn ($record) =>
+                                    ! empty($record->submissions->first()?->review?->comments) &&
+                                    $record->isResultPublished()
+                                ),
+                        ])->visible(fn ($record) =>
+                        $record->submissions->where('student_id', Auth::id())->isNotEmpty()
+                        ),
+                    ]),
+            ]);
+    }
+
+    // ── Submission Wizard Form ────────────────────────────────────────────
+
+    public static function submissionWizard(): array
     {
         return [
-            //
+            Wizard::make([
+                Wizard\Step::make('Upload')
+                    ->icon('heroicon-o-document-arrow-up')
+                    ->description('Choose your file')
+                    ->schema([
+                        FileUpload::make('file')
+                            ->label('Upload Your Work')
+                            ->acceptedFileTypes([
+                                'application/pdf',
+                                'application/msword',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            ])
+                            ->maxSize(10240)
+                            ->required()
+                            ->directory('submissions/temp')
+                            ->preserveFilenames()
+                            ->disk('public')
+                            ->storeFileNamesIn('original_file_name')
+                            ->helperText('PDF, DOC or DOCX — maximum 10 MB'),
+
+                        Textarea::make('notes')
+                            ->label('Notes for your Reviewer (Optional)')
+                            ->rows(3)
+                            ->placeholder('Any context or comments about your submission...'),
+                    ]),
+
+                Wizard\Step::make('Confirm')
+                    ->icon('heroicon-o-check-circle')
+                    ->description('Review before submitting')
+                    ->schema([
+                        Placeholder::make('file_preview')
+                            ->label('File selected')
+                            ->content(fn ($get) => $get('original_file_name') ?: '—'),
+
+                        Placeholder::make('notes_preview')
+                            ->label('Your notes')
+                            ->content(fn ($get) => $get('notes') ?: 'None'),
+
+                        Checkbox::make('confirm_submission')
+                            ->label('I confirm this is my own work and I am ready to submit.')
+                            ->required()
+                            ->accepted(),
+                    ]),
+            ]),
         ];
     }
+
+    // ── Submission Handler ────────────────────────────────────────────────
+
+    public static function handleSubmission(Task $record, array $data): void
+    {
+        $context = [
+            'candidate_id' => Auth::id(),
+            'task_id'      => $record->id,
+            'task_title'   => $record->title,
+            'ip'           => request()->ip(),
+        ];
+
+        Log::info('Submission: attempt', array_merge($context, ['event' => 'submission_attempt']));
+
+        try {
+            $fileDetails = UpcomingDeadlinesWidget::processSubmissionFile($data, $record);
+
+            $submission = Submission::create([
+                'task_id'       => $record->id,
+                'student_id'    => Auth::id(),
+                'file_name'     => $fileDetails['file_name'],
+                'file_path'     => $fileDetails['file_path'],
+                'file_size'     => $fileDetails['file_size'],
+                'file_type'     => $fileDetails['file_type'],
+                'student_notes' => $data['notes'] ?? null,
+                'submitted_at'  => now(),
+                'status'        => SubmissionTypes::PENDING_REVIEW->value,
+            ]);
+
+            Log::info('Submission: success', array_merge($context, [
+                'event'         => 'submission_success',
+                'submission_id' => $submission->id,
+            ]));
+
+            Notification::make()
+                ->title('Submitted Successfully!')
+                ->body('Your assignment has been submitted. You will be notified when it is reviewed.')
+                ->success()
+                ->send();
+
+        } catch (\Exception $e) {
+            Log::error('Submission: error', array_merge($context, [
+                'event' => 'submission_error',
+                'error' => $e->getMessage(),
+            ]));
+
+            Notification::make()
+                ->title('Submission Failed')
+                ->body('An error occurred: ' . $e->getMessage())
+                ->danger()
+                ->send();
+        }
+    }
+
+    public static function getRelations(): array { return []; }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListTasks::route('/'),
-            'create' => Pages\CreateTask::route('/create'),
-            'view' => Pages\ViewTask::route('/{record}'),
-            'edit' => Pages\EditTask::route('/{record}/edit'),
+            'view'  => Pages\ViewTask::route('/{record}'),
         ];
-    }
-
-    /**
-     * @param $data
-     * @param $record
-     * @param bool $isResubmit
-     * @param null $existingSubmission
-     * @return array
-     * @throws Exception
-     */
-    public static function processSubmissionFile($data, $record, bool $isResubmit = false, $existingSubmission = null): array
-    {
-        try {
-            $sectionId = $record->section->id;
-            $taskId = $record->id;
-            $userId = Auth::id();
-            $userName = strtolower(str_replace(' ', '_', Auth::user()->name));
-            $timestamp = now()->format('Y-m-d_H-i-s');
-
-            // Define file paths
-            $tempPath = $data['file'];
-            $finalDir = "submissions/{$sectionId}/{$taskId}";
-            $originalName = str_replace(' ', '_', $data['original_file_name']);
-            $sanitizedName = "{$userName}-{$timestamp}-{$originalName}";
-            $newPath = "{$finalDir}/{$sanitizedName}";
-
-            // Add FIRST logging point here
-            Log::info('Pre-upload file details', [
-                'temp_path' => $tempPath,
-                'new_path' => $newPath,
-                'directory' => $finalDir,
-                'sanitized_name' => $sanitizedName,
-                'disk' => config('filesystems.default'),
-                'temp_exists' => Storage::disk('public')->exists($tempPath), // Check temp file
-                'target_exists' => Storage::disk(config('filesystems.default'))->exists($newPath) // Check destination
-            ]);
-
-            // Ensure a directory exists (S3 doesn't need this, but we'll keep it for local compatibility)
-            if (config('filesystems.default') !== 's3') {
-                Storage::disk('public')->makeDirectory($finalDir);
-            }
-
-            // Move a file from temp to a permanent location
-            if (!Storage::disk('public')->exists($tempPath)) {
-                throw new Exception("Uploaded file not found at: {$tempPath}");
-            }
-
-            // For S3, we'll use putFileAs instead of move
-//        if (config('filesystems.default') === 's3') {
-//            $fileStream = Storage::disk('public')->readStream($tempPath);
-//            Storage::disk('s3')->put($newPath, $fileStream);
-//            Storage::disk('public')->delete($tempPath); // Clean up a temp file
-//        } else {
-//            Storage::disk('public')->move($tempPath, $newPath);
-//        }
-
-            if (config('filesystems.default') === 's3') {
-                $fileStream = Storage::disk('public')->readStream($tempPath);
-                Storage::disk('s3')->put($newPath, $fileStream, [
-                    'Visibility' => 'private',
-                    'ContentType' => Storage::disk('public')->mimeType($tempPath)
-                ]);
-                Storage::disk('public')->delete($tempPath);
-            } else {
-                Storage::disk('public')->move($tempPath, $newPath);
-            }
-
-            // Delete an old file on resubmitting
-            if ($isResubmit && $existingSubmission) {
-                Storage::disk(config('filesystems.default'))->delete($existingSubmission->file_path);
-            }
-
-            // Add SECOND logging point here
-            Log::info('Post-upload file details', [
-                'new_path' => $newPath,
-                'disk' => config('filesystems.default'),
-                'directory' => $finalDir,
-                'sanitized_name' => $sanitizedName,
-                'final_exists' => Storage::disk(config('filesystems.default'))->exists($newPath),
-                'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
-                'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath)
-            ]);
-
-            // Return file details
-            return [
-                'file_name' => $sanitizedName,
-                'file_path' => $finalDir,
-                'file_size' => Storage::disk(config('filesystems.default'))->size($newPath),
-                'file_type' => Storage::disk(config('filesystems.default'))->mimeType($newPath),
-            ];
-        } catch (Exception $e) {
-            // Clean up any partial uploads
-            if (isset($newPath)) {
-                Storage::disk(config('filesystems.default'))->delete($newPath);
-            }
-            Log::error('File processing failed', [
-                'error' => $e->getMessage(),
-                'temp_path' => $tempPath ?? null,
-                'new_path' => $newPath ?? null,
-                'stack_trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
-        }
-    }
-
-    protected static function getDownloadUrl(Submission $submission): ?string
-    {
-        try {
-            $fullPath = $submission->file_path.'/'.$submission->file_name;
-
-            // Check if file exists first
-            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
-                Log::error("File not found at path: {$fullPath}");
-                return null;
-            }
-
-            // Generate temporary URL with proper expiration
-            return Storage::disk(config('filesystems.default'))
-                ->temporaryUrl(
-                    $fullPath,
-                    now()->addMinutes(30),
-                    [
-                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
-                    ]
-                );
-        } catch (Exception $e) {
-            Log::error("Failed to generate download URL: ".$e->getMessage());
-            return null;
-        }
-    }
-
-    public static function canEdit($record): bool
-    {
-        return false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return false;
-    }
-
-    public static function canView($record): bool
-    {
-        return false;
-    }
-
-    public static function getNavigationBadge(): ?string
-    {
-        return static::getEloquentQuery()
-            ->whereDoesntHave('submissions', function ($query) {
-                $query->where('student_id', Auth::user()->id);
-            })
-            ->count();
-    }
-
-    public static function getNavigationBadgeColor(): ?string
-    {
-        $count = static::getNavigationBadge();
-        return $count > 0 ? 'danger' : null;
     }
 }

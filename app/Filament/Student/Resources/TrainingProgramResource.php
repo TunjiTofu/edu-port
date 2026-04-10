@@ -4,52 +4,32 @@ namespace App\Filament\Student\Resources;
 
 use App\Enums\ProgramEnrollmentStatus;
 use App\Filament\Student\Resources\TrainingProgramResource\Pages;
-use App\Filament\Student\Resources\TrainingProgramResource\RelationManagers;
 use App\Models\TrainingProgram;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 
 class TrainingProgramResource extends Resource
 {
-    protected static ?string $model = TrainingProgram::class;
-    protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
-    protected static ?string $navigationLabel = 'My Training Programs';
+    protected static ?string $model           = TrainingProgram::class;
+    protected static ?string $navigationIcon  = 'heroicon-o-academic-cap';
+    protected static ?string $navigationLabel = 'My Programs';
     protected static ?string $navigationGroup = 'Learning';
-    protected static ?int $navigationSort = 3;
+    protected static ?int    $navigationSort  = 3;
 
-    public static function canViewAny(): bool
-    {
-        return Auth::user()?->isStudent();
-    }
-
-    public static function canCreate(): bool
-    {
-        return false;
-    }
-
-    public static function canDelete($record): bool
-    {
-        return false;
-    }
-
-    public static function canEdit($record): bool
-    {
-        return false;
-    }
+    public static function canViewAny(): bool  { return Auth::user()?->isStudent(); }
+    public static function canCreate(): bool   { return false; }
+    public static function canDelete($record): bool { return false; }
+    public static function canEdit($record): bool   { return false; }
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->whereHas('enrollments', function ($query) {
-                $query->where('student_id', Auth::user()->id);
-            })
-            ->with(['sections.tasks', 'sections.tasks.submissions' ,'enrollments' => function ($query) {
-                $query->where('student_id', Auth::user()->id);
-            }]);
+            ->whereHas('enrollments', fn ($q) => $q->where('student_id', Auth::id()))
+            ->withCount(['sections', 'enrollments'])
+            ->with(['enrollments' => fn ($q) => $q->where('student_id', Auth::id())]);
     }
 
     public static function table(Table $table): Table
@@ -58,144 +38,148 @@ class TrainingProgramResource extends Resource
             ->columns([
                 Tables\Columns\Layout\Stack::make([
                     Tables\Columns\Layout\Split::make([
-                        Tables\Columns\ImageColumn::make('image')
+
+                        // Program image
+                        Tables\Columns\ImageColumn::make('image_url')
                             ->label('')
-                            ->disk(config('filesystems.default'))
-                            ->visibility('private')
                             ->circular()
-                            ->size(80)
-                            ->defaultImageUrl('/images/default-program.png')
-                            ->grow(false),
+                            ->size(64)
+                            ->defaultImageUrl(asset('images/logo.png'))
+                            ->grow(false)
+                            ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
 
                         Tables\Columns\Layout\Stack::make([
                             Tables\Columns\TextColumn::make('name')
                                 ->label('')
-                                ->searchable()
-                                ->sortable()
                                 ->weight('bold')
-                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large),
+                                ->size(Tables\Columns\TextColumn\TextColumnSize::Large)
+                                ->searchable(),
 
                             Tables\Columns\TextColumn::make('description')
-                                ->label('')
-                                ->color('gray')
-                                ->wrap(),
+                                ->label('')->color('gray')->wrap()->limit(100),
 
+                            // Stats badges
                             Tables\Columns\Layout\Grid::make(2)
                                 ->schema([
                                     Tables\Columns\TextColumn::make('sections_count')
-                                        ->label('Sections')
-                                        ->counts('sections')
-                                        ->badge()
-                                        ->color('info')
-                                        ->formatStateUsing(fn($state) => 'Sections: ' . $state),
+                                        ->badge()->color('info')
+                                        ->formatStateUsing(fn ($state) => "📚 {$state} " . str('Section')->plural($state)),
 
-                                    Tables\Columns\TextColumn::make('tasks_count')
-                                        ->label('Total Tasks')
-                                        ->getStateUsing(fn($record) => $record->sections->sum(fn($section) => $section->tasks->count()))
-                                        ->badge()
-                                        ->color('warning')
-                                        ->formatStateUsing(fn($state) => 'Tasks: ' . $state),
+                                    Tables\Columns\TextColumn::make('enrollments_count')
+                                        ->badge()->color('success')
+                                        ->formatStateUsing(fn ($state) => "👥 {$state} Enrolled"),
                                 ]),
 
-                            Tables\Columns\TextColumn::make('')
-                                ->label('')
-                                ->formatStateUsing(fn() => '')
-                                ->extraAttributes(['style' => 'height: 8px;']),
-
+                            // Enrollment status + enrolled date
                             Tables\Columns\Layout\Grid::make(2)
                                 ->schema([
                                     Tables\Columns\TextColumn::make('enrollments.enrolled_at')
-                                        ->label('Enrolled Date')
-                                        ->date()
-                                        ->sortable()
+                                        ->label('Enrolled')
                                         ->icon('heroicon-o-calendar')
-                                        ->formatStateUsing(fn($state) => 'Enrolled: ' . $state),
+                                        ->formatStateUsing(function ($state) {
+                                            if (! $state) return 'Unknown';
+                                            $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                                            return 'Enrolled: ' . $carbon->format('M j, Y');
+                                        }),
 
                                     Tables\Columns\TextColumn::make('enrollments.status')
-                                        ->label('Status')
                                         ->badge()
-                                        ->color(fn(string $state): string => match ($state) {
-                                            ProgramEnrollmentStatus::ACTIVE->value => 'success',
-                                            ProgramEnrollmentStatus::COMPLETED->value => 'warning',
-                                            ProgramEnrollmentStatus::PAUSED->value => 'danger',
-                                            default => 'gray',
+                                        ->color(fn (string $state): string => match ($state) {
+                                            ProgramEnrollmentStatus::ACTIVE->value    => 'success',
+                                            ProgramEnrollmentStatus::COMPLETED->value => 'info',
+                                            ProgramEnrollmentStatus::PAUSED->value    => 'warning',
+                                            default                                   => 'gray',
                                         })
-                                        ->formatStateUsing(fn(string $state): string => 'Status: ' . str($state)->title())
+                                        ->formatStateUsing(fn (string $state): string => match ($state) {
+                                            ProgramEnrollmentStatus::ACTIVE->value    => '🟢 Active',
+                                            ProgramEnrollmentStatus::COMPLETED->value => '✅ Completed',
+                                            ProgramEnrollmentStatus::PAUSED->value    => '⏸ Paused',
+                                            default                                   => ucfirst($state),
+                                        }),
                                 ]),
-                        ])->grow(true),
-                    ])->from('md'),
+
+                            // Date range
+                            Tables\Columns\Layout\Grid::make(2)
+                                ->schema([
+                                    Tables\Columns\TextColumn::make('start_date')
+                                        ->icon('heroicon-o-play-circle')
+                                        ->formatStateUsing(fn ($state) =>
+                                            'Starts: ' . ($state instanceof \Carbon\Carbon
+                                                ? $state->format('M j, Y')
+                                                : \Carbon\Carbon::parse($state)->format('M j, Y'))
+                                        ),
+
+                                    Tables\Columns\TextColumn::make('end_date')
+                                        ->icon('heroicon-o-stop-circle')
+                                        ->formatStateUsing(fn ($state) =>
+                                            'Ends: ' . ($state instanceof \Carbon\Carbon
+                                                ? $state->format('M j, Y')
+                                                : \Carbon\Carbon::parse($state)->format('M j, Y'))
+                                        ),
+                                ]),
+                        ])->space(2)->grow(true),
+                    ])->from('sm'),
                 ])->space(3),
             ])
-            ->contentGrid([
-                'md' => 1,
-                'xl' => 1,
-            ])
+            ->contentGrid(['default' => 1, 'sm' => 1, 'md' => 2, 'xl' => 2])
             ->filters([
                 Tables\Filters\SelectFilter::make('enrollment_status')
-                    ->label('Enrollment Status')
+                    ->label('Status')
                     ->options([
-                        ProgramEnrollmentStatus::ACTIVE->value => 'Active',
+                        ProgramEnrollmentStatus::ACTIVE->value    => 'Active',
                         ProgramEnrollmentStatus::COMPLETED->value => 'Completed',
-                        ProgramEnrollmentStatus::PAUSED->value => 'Paused',
+                        ProgramEnrollmentStatus::PAUSED->value    => 'Paused',
                     ])
-                    ->query(function (Builder $query, array $data) {
-                        if ($data['value']) {
-                            $query->whereHas('enrollments', function ($q) use ($data) {
-                                $q->where('status', $data['value']);
-                            });
-                        }
-                    }),
+                    ->query(fn (Builder $query, array $data) =>
+                    $data['value']
+                        ? $query->whereHas('enrollments',
+                        fn ($q) => $q->where('status', $data['value'])
+                            ->where('student_id', Auth::id()))
+                        : $query
+                    ),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('View Details')
+                    ->label('Open')
+                    ->icon('heroicon-o-arrow-right')
                     ->color('primary')
-                    ->icon('heroicon-o-eye'),
+                    ->button(),
             ])
             ->bulkActions([])
-            ->emptyStateHeading('No Programs Enrolled')
-            ->emptyStateDescription('You are not currently enrolled in any training programs.')
+            ->emptyStateHeading('No Programs Yet')
+            ->emptyStateDescription("You're not enrolled in any training programs.")
             ->emptyStateIcon('heroicon-o-academic-cap')
             ->emptyStateActions([
-                Tables\Actions\Action::make('browse_programs')
+                Tables\Actions\Action::make('browse')
                     ->label('Browse Available Programs')
                     ->icon('heroicon-o-plus-circle')
                     ->color('primary')
-                    ->url(fn() => route('filament.student.resources.available-training-programs.index'))
+                    ->url(fn () => route('filament.student.resources.available-training-programs.index')),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('enroll_new')
                     ->label('Enroll in New Program')
                     ->icon('heroicon-o-plus-circle')
                     ->color('success')
-                    ->url(fn() => route('filament.student.resources.available-training-programs.index'))
+                    ->url(fn () => route('filament.student.resources.available-training-programs.index')),
             ]);
     }
 
     public static function getNavigationBadge(): ?string
     {
-        return static::getEloquentQuery()->count();
+        $count = TrainingProgram::whereHas('enrollments',
+            fn ($q) => $q->where('student_id', Auth::id()))->count();
+        return $count > 0 ? (string) $count : null;
     }
 
-    public static function getNavigationBadgeColor(): ?string
-    {
-        return 'info';
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+    public static function getNavigationBadgeColor(): ?string { return 'info'; }
+    public static function getRelations(): array { return []; }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListTrainingPrograms::route('/'),
-            'create' => Pages\CreateTrainingProgram::route('/create'),
-            'view' => Pages\ViewTrainingProgram::route('/{record}'),
-            'edit' => Pages\EditTrainingProgram::route('/{record}/edit'),
+            'view'  => Pages\ViewTrainingProgram::route('/{record}'),
         ];
     }
 }

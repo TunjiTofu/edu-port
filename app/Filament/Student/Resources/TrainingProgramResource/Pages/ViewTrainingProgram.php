@@ -4,16 +4,12 @@ namespace App\Filament\Student\Resources\TrainingProgramResource\Pages;
 
 use App\Enums\SubmissionTypes;
 use App\Filament\Student\Resources\TrainingProgramResource;
-use Carbon\Carbon;
-use Filament\Actions;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\Group;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\Split;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\ViewEntry;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
@@ -22,124 +18,153 @@ class ViewTrainingProgram extends ViewRecord
 {
     protected static string $resource = TrainingProgramResource::class;
 
-    protected function getHeaderActions(): array
-    {
-        return [
-            Actions\EditAction::make(),
-        ];
-    }
+    // No EditAction — candidates are read-only on training programs
+    protected function getHeaderActions(): array { return []; }
 
     public function infolist(Infolist $infolist): Infolist
     {
         return $infolist
             ->schema([
-                Section::make('Program Overview')
+                // ── Program Overview ─────────────────────────────────────────
+                Section::make()
                     ->schema([
-                        Split::make([
-                            Grid::make(2)
-                                ->schema([
-                                    ImageEntry::make('thumbnail')
-                                        ->hiddenLabel()
-                                        ->size(200),
-
-                                    Group::make([
-                                        TextEntry::make('name')
-                                            ->size('lg')
-                                            ->weight('bold'),
-
-                                        TextEntry::make('description')
-                                            ->prose(),
-
-                                        Grid::make(3)
-                                            ->schema([
-                                                TextEntry::make('start_date')
-                                                    ->label('Program Start Date')
-                                                    ->date()
-                                                    ->icon('heroicon-o-calendar'),
-
-                                                TextEntry::make('end_date')
-                                                    ->label('Program End Date')
-                                                    ->date()
-                                                    ->icon('heroicon-o-calendar'),
-
-                                                TextEntry::make('duration')
-                                                    ->label('Duration')
-                                                    ->icon('heroicon-o-clock')
-                                                    ->state(function ($record) {
-                                                        if (!$record->start_date || !$record->end_date) {
-                                                            return 'N/A';
-                                                        }
-
-                                                        $start = Carbon::parse($record->start_date);
-                                                        $end = Carbon::parse($record->end_date);
-
-                                                        return $start->diffForHumans($end, [
-                                                            'parts' => 3,
-                                                            'join' => true,
-                                                        ]);
-                                                    }),
-
-                                                TextEntry::make('enrollments.enrolled_at')
-                                                    ->label('Date Enrolled')
-                                                    ->date()
-                                                    ->icon('heroicon-o-calendar'),
-                                            ]),
+                        Grid::make(['default' => 1, 'sm' => 5])
+                            ->schema([
+                                // FIX: Small image — 80px circle on the left, not half the layout
+                                ImageEntry::make('image_url')
+                                    ->label('')
+                                    ->circular()
+                                    ->size(80)
+                                    ->defaultImageUrl(asset('images/logo.png'))
+                                    ->columnSpan(1)
+                                    ->extraImgAttributes([
+                                        'class' => 'ring-4 ring-primary-500/20 shadow mx-auto sm:mx-0',
                                     ]),
-                                ]),
-                        ]),
+
+                                Group::make([
+                                    TextEntry::make('name')
+                                        ->label('')
+                                        ->size('lg')
+                                        ->weight('bold'),
+
+                                    TextEntry::make('description')
+                                        ->label('')
+                                        ->prose()
+                                        ->columnSpanFull(),
+                                ])->columnSpan(['default' => 1, 'sm' => 4]),
+                            ]),
                     ]),
 
-                Section::make('Program Structure')
+                // ── Key Dates ─────────────────────────────────────────────────
+                Section::make('Program Timeline')
+                    ->icon('heroicon-o-calendar')
+                    ->columns(['default' => 2, 'sm' => 4])
+                    ->schema([
+                        TextEntry::make('enrollments.enrolled_at')
+                            ->label('Date Enrolled')
+                            ->date('M j, Y')
+                            ->badge()->color('success'),
+
+                        TextEntry::make('start_date')
+                            ->label('Starts')
+                            ->date('M j, Y')
+                            ->badge()->color('info'),
+
+                        TextEntry::make('end_date')
+                            ->label('Ends')
+                            ->date('M j, Y')
+                            ->badge()->color('warning'),
+
+                        TextEntry::make('duration_weeks')
+                            ->label('Duration')
+                            ->badge()->color('gray'),
+                    ]),
+
+                // ── Program Structure ─────────────────────────────────────────
+                Section::make('Program Content')
+                    ->icon('heroicon-o-book-open')
                     ->schema([
                         RepeatableEntry::make('sections')
+                            ->label('')
                             ->schema([
+                                // Section header
                                 TextEntry::make('name')
-                                    ->label('Section Name')
+                                    ->label('')
                                     ->size('lg')
-                                    ->weight('bold'),
-
+                                    ->weight('bold')
+                                    ->columnSpanFull(),
 
                                 TextEntry::make('description')
-                                    ->prose(),
+                                    ->label('')
+                                    ->prose()
+                                    ->columnSpanFull()
+                                    ->visible(fn ($record) => ! empty($record->description)),
 
+                                // Tasks within the section
                                 RepeatableEntry::make('tasks')
+                                    ->label('Tasks')
                                     ->schema([
-                                        Grid::make(4)
+                                        Grid::make(['default' => 1, 'sm' => 4])
                                             ->schema([
-                                                TextEntry::make('id')
-                                                    ->weight('medium'),
-
                                                 TextEntry::make('title')
-                                                    ->weight('medium'),
+                                                    ->label('Task')
+                                                    ->weight('medium')
+                                                    ->columnSpan(['default' => 1, 'sm' => 2]),
 
                                                 TextEntry::make('due_date')
-                                                    ->date()
-                                                    ->color(fn($state) => $state && $state->isPast() ? 'danger' : 'success'),
+                                                    ->label('Due')
+                                                    ->date('M j, Y')
+                                                    ->color(fn ($state) =>
+                                                    $state && $state->isPast() ? 'danger' : 'success'
+                                                    ),
 
                                                 TextEntry::make('submission_status')
+                                                    ->label('Status')
                                                     ->badge()
                                                     ->state(function ($record) {
-                                                        $status = $record->submissions
+                                                        return $record->submissions
                                                             ->where('student_id', Auth::id())
-                                                            ->first()?->status ?? SubmissionTypes::PENDING_REVIEW->value;
-
-                                                        return $status;
+                                                            ->first()
+                                                            ?->status
+                                                            ?? 'not_submitted';
                                                     })
-                                                    ->color(fn($state) => match ($state) {
-                                                        SubmissionTypes::PENDING_REVIEW->value => 'gray',
-                                                        SubmissionTypes::UNDER_REVIEW->value => 'info',
-                                                        SubmissionTypes::NEEDS_REVISION->value => 'warning',
-                                                        SubmissionTypes::COMPLETED->value => 'primary',
-                                                        SubmissionTypes::FLAGGED->value => 'danger',
-                                                        default => 'gray',
+                                                    ->color(fn ($state) => match ($state) {
+                                                        SubmissionTypes::COMPLETED->value     => 'success',
+                                                        SubmissionTypes::PENDING_REVIEW->value => 'info',
+                                                        SubmissionTypes::UNDER_REVIEW->value  => 'warning',
+                                                        SubmissionTypes::NEEDS_REVISION->value => 'danger',
+                                                        SubmissionTypes::FLAGGED->value       => 'danger',
+                                                        'not_submitted'                        => 'gray',
+                                                        default                                => 'gray',
                                                     })
-                                                    ->formatStateUsing(fn($state) => str($state)->title())
+                                                    ->formatStateUsing(fn ($state) => match ($state) {
+                                                        SubmissionTypes::COMPLETED->value      => '✅ Completed',
+                                                        SubmissionTypes::PENDING_REVIEW->value => '⏳ Awaiting Review',
+                                                        SubmissionTypes::UNDER_REVIEW->value   => '🔍 Under Review',
+                                                        SubmissionTypes::NEEDS_REVISION->value => '⚠️ Needs Revision',
+                                                        SubmissionTypes::FLAGGED->value        => '🚩 Flagged',
+                                                        'not_submitted'                         => '📝 Not Submitted',
+                                                        default                                 => ucfirst(str_replace('_', ' ', $state)),
+                                                    }),
                                             ]),
                                     ])
-                                    ->columns(1),
+                                    ->contained(false)
+                                    ->columnSpanFull(),
                             ])
-                            ->columns(1),
+                            ->contained(true)
+                            ->columnSpanFull(),
                     ]),
             ]);
+    }
+
+    /**
+     * Load only what this view needs — submissions scoped to this candidate.
+     */
+    protected function resolveRecord($key): \App\Models\TrainingProgram
+    {
+        return \App\Models\TrainingProgram::with([
+            'sections.tasks.submissions' => fn ($q) => $q->where('student_id', Auth::id()),
+            'enrollments'                => fn ($q) => $q->where('student_id', Auth::id()),
+        ])->findOrFail($key);
     }
 }

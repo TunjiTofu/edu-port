@@ -59,7 +59,18 @@ class User extends Authenticatable implements FilamentUser
 
     public function reviews(): HasMany
     {
-        // FIX: Removed duplicate reviewsAsReviewer() method — identical to this one.
+        return $this->hasMany(Review::class, 'reviewer_id');
+    }
+
+    /**
+     * Alias of reviews() kept for withCount() compatibility.
+     * ReviewerPerformanceWidget uses this name in withCount()/withAvg() calls:
+     *   ->withCount(['reviewsAsReviewer as total_reviews', ...])
+     *   ->withAvg('reviewsAsReviewer as avg_score', 'score')
+     * Renaming the relationship would break those aliases.
+     */
+    public function reviewsAsReviewer(): HasMany
+    {
         return $this->hasMany(Review::class, 'reviewer_id');
     }
 
