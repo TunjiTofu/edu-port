@@ -4,11 +4,12 @@ namespace App\Filament\Student\Resources;
 
 use App\Enums\SubmissionTypes;
 use App\Filament\Student\Resources\TaskResource\Pages;
+use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use App\Models\Submission;
 use App\Models\Task;
-use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Wizard;
@@ -30,8 +31,8 @@ class TaskResource extends Resource
     protected static ?string $navigationGroup = 'Submissions';
     protected static ?int    $navigationSort  = 1;
 
-    public static function canViewAny(): bool  { return Auth::user()?->isStudent(); }
-    public static function canCreate(): bool   { return false; }
+    public static function canViewAny(): bool       { return Auth::user()?->isStudent(); }
+    public static function canCreate(): bool        { return false; }
     public static function canEdit($record): bool   { return false; }
     public static function canDelete($record): bool { return false; }
 
@@ -51,7 +52,7 @@ class TaskResource extends Resource
             ->orderBy('due_date');
     }
 
-    // ── Navigation Badge ───────────────────────────────────────────────────
+    // ── Navigation Badge — count of unsubmitted tasks ──────────────────────
 
     public static function getNavigationBadge(): ?string
     {
@@ -78,15 +79,14 @@ class TaskResource extends Resource
             ->columns([
                 Tables\Columns\Layout\Stack::make([
                     Tables\Columns\Layout\Split::make([
-                        // Status icon pill
+
+                        // Status emoji pill
                         Tables\Columns\TextColumn::make('status_icon')
                             ->label('')
                             ->getStateUsing(function ($record) {
-                                $submission = $record->submissions->first();
-                                if (! $submission) {
-                                    return $record->due_date?->isPast() ? '🔴' : '📝';
-                                }
-                                return match ($submission->status) {
+                                $sub = $record->submissions->first();
+                                if (! $sub) return $record->due_date?->isPast() ? '🔴' : '📝';
+                                return match ($sub->status) {
                                     SubmissionTypes::COMPLETED->value      => '✅',
                                     SubmissionTypes::PENDING_REVIEW->value => '⏳',
                                     SubmissionTypes::UNDER_REVIEW->value   => '🔍',
@@ -99,14 +99,11 @@ class TaskResource extends Resource
                             ->extraAttributes(['class' => 'text-2xl leading-none pt-1']),
 
                         Tables\Columns\Layout\Stack::make([
-                            // Task title
                             Tables\Columns\TextColumn::make('title')
-                                ->label('')
-                                ->weight('bold')
+                                ->label('')->weight('bold')
                                 ->size(Tables\Columns\TextColumn\TextColumnSize::Medium)
                                 ->searchable(),
 
-                            // Program > Section breadcrumb
                             Tables\Columns\TextColumn::make('section.name')
                                 ->label('')
                                 ->formatStateUsing(fn ($state, $record) =>
@@ -117,13 +114,11 @@ class TaskResource extends Resource
 
                             Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
                                 ->schema([
-                                    // Due date badge
                                     Tables\Columns\TextColumn::make('due_date')
                                         ->badge()
                                         ->color(function ($state, $record) {
                                             if (! $state) return 'gray';
-                                            $submitted = $record->submissions->isNotEmpty();
-                                            if ($submitted) return 'success';
+                                            if ($record->submissions->isNotEmpty()) return 'success';
                                             $days = now()->diffInDays($state, false);
                                             return match (true) {
                                                 $days < 0  => 'danger',
@@ -133,21 +128,18 @@ class TaskResource extends Resource
                                         })
                                         ->formatStateUsing(function ($state, $record) {
                                             if (! $state) return '🗓 No deadline';
-                                            $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-                                            $submitted = $record->submissions->isNotEmpty();
-                                            if ($submitted) return '✅ Submitted';
-                                            $days = now()->diffInDays($carbon, false);
+                                            $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                                            $days = now()->diffInDays($c, false);
+                                            if ($record->submissions->isNotEmpty()) return '📤 Submitted';
                                             return match (true) {
-                                                $days < 0  => '🔴 Overdue — ' . $carbon->format('M j'),
+                                                $days < 0  => '🔴 Overdue — ' . $c->format('M j'),
                                                 $days == 0 => '⚠️ Due today',
                                                 $days <= 3 => "⚠️ {$days}d left",
-                                                default    => '📅 ' . $carbon->format('M j, Y'),
+                                                default    => '📅 ' . $c->format('M j, Y'),
                                             };
                                         }),
 
-                                    // Submission status badge
                                     Tables\Columns\TextColumn::make('submission_status')
-                                        ->label('Status')
                                         ->badge()
                                         ->getStateUsing(fn ($record) =>
                                             $record->submissions->first()?->status ?? 'not_submitted'
@@ -178,27 +170,28 @@ class TaskResource extends Resource
             ->contentGrid(['default' => 1, 'md' => 2])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
-                    ->label('Submission Status')
+                    ->label('Status')
                     ->options([
-                        'not_submitted' => 'Not Submitted',
+                        'not_submitted'                        => 'Not Submitted',
                         SubmissionTypes::PENDING_REVIEW->value => 'Awaiting Review',
                         SubmissionTypes::UNDER_REVIEW->value   => 'Under Review',
+                        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
                         SubmissionTypes::COMPLETED->value      => 'Completed',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         if (! $data['value']) return $query;
                         if ($data['value'] === 'not_submitted') {
-                            return $query->whereDoesntHave('submissions', fn ($q) =>
-                            $q->where('student_id', Auth::id())
+                            return $query->whereDoesntHave('submissions',
+                                fn ($q) => $q->where('student_id', Auth::id())
                             );
                         }
-                        return $query->whereHas('submissions', fn ($q) =>
-                        $q->where('student_id', Auth::id())->where('status', $data['value'])
+                        return $query->whereHas('submissions',
+                            fn ($q) => $q->where('student_id', Auth::id())->where('status', $data['value'])
                         );
                     }),
 
                 Tables\Filters\Filter::make('overdue')
-                    ->label('Overdue Only')
+                    ->label('Overdue')
                     ->toggle()
                     ->query(fn (Builder $query) =>
                     $query->whereNotNull('due_date')
@@ -210,52 +203,60 @@ class TaskResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('View Task')
+                    ->label('View')
                     ->icon('heroicon-o-eye')
-                    ->button()
-                    ->color('primary'),
+                    ->button()->color('gray'),
 
-                // Quick submit directly from the list
-                Tables\Actions\Action::make('quick_submit')
+                // First submission
+                Tables\Actions\Action::make('submit')
                     ->label('Submit')
                     ->icon('heroicon-o-arrow-up-tray')
-                    ->button()
-                    ->color('success')
+                    ->button()->color('success')
                     ->visible(fn ($record) => $record->submissions->isEmpty())
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
+
+                // Resubmit — only while pending_review (not yet picked up by a reviewer)
+                Tables\Actions\Action::make('resubmit')
+                    ->label('Resubmit')
+                    ->icon('heroicon-o-arrow-path')
+                    ->button()->color('warning')
+                    ->visible(fn ($record) =>
+                        $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Replace Your Submission?')
+                    ->modalDescription('Resubmitting will replace your current file. Your previous submission will be deleted. You can only do this while the task is still awaiting review.')
+                    ->modalSubmitActionLabel('Yes, Replace Submission')
+                    ->form(fn () => static::submissionWizard())
+                    ->action(fn ($record, $data) => static::handleResubmission($record, $data)),
             ])
             ->defaultSort('due_date')
-            ->emptyStateHeading('No Tasks Available')
-            ->emptyStateDescription("You don't have any tasks yet. Enroll in a program to get started.")
+            ->emptyStateHeading('No Tasks Yet')
+            ->emptyStateDescription("Enroll in a training program to access tasks.")
             ->emptyStateIcon('heroicon-o-clipboard-document-list');
     }
 
-    // ── Infolist (View Task) ───────────────────────────────────────────────
+    // ── Infolist ───────────────────────────────────────────────────────────
 
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
             ->schema([
-                // Task header
                 Infolists\Components\Section::make()
                     ->schema([
                         Infolists\Components\Grid::make(['default' => 1, 'sm' => 3])
                             ->schema([
                                 Infolists\Components\TextEntry::make('section.trainingProgram.name')
-                                    ->label('Program')
-                                    ->badge()->color('info'),
+                                    ->label('Program')->badge()->color('info'),
 
                                 Infolists\Components\TextEntry::make('section.name')
-                                    ->label('Section')
-                                    ->badge()->color('gray'),
+                                    ->label('Section')->badge()->color('gray'),
 
                                 Infolists\Components\TextEntry::make('due_date')
                                     ->label('Due Date')
                                     ->badge()
-                                    ->color(fn ($state) =>
-                                    $state && $state->isPast() ? 'danger' : 'success'
-                                    )
+                                    ->color(fn ($state) => $state?->isPast() ? 'danger' : 'success')
                                     ->formatStateUsing(fn ($state) => $state
                                         ? $state->format('M j, Y')
                                         : 'No deadline'
@@ -263,30 +264,21 @@ class TaskResource extends Resource
                             ]),
 
                         Infolists\Components\TextEntry::make('title')
-                            ->label('')
-                            ->size('lg')
-                            ->weight('bold')
-                            ->columnSpanFull(),
+                            ->label('')->size('lg')->weight('bold')->columnSpanFull(),
 
                         Infolists\Components\TextEntry::make('description')
-                            ->label('Task Description')
-                            ->html()
-                            ->prose()
-                            ->columnSpanFull()
+                            ->label('Task Description')->html()->prose()->columnSpanFull()
                             ->visible(fn ($record) => ! empty($record->description)),
 
                         Infolists\Components\TextEntry::make('instructions')
-                            ->label('Instructions')
-                            ->html()
-                            ->prose()
-                            ->columnSpanFull()
+                            ->label('Instructions')->html()->prose()->columnSpanFull()
                             ->visible(fn ($record) => ! empty($record->instructions)),
                     ]),
 
-                // Rubrics (evaluation criteria)
+                // Rubrics
                 Infolists\Components\Section::make('Evaluation Criteria')
                     ->icon('heroicon-o-star')
-                    ->description('Your submission will be assessed against these criteria.')
+                    ->description('Your submission will be scored against these criteria.')
                     ->collapsible()
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('activeRubrics')
@@ -294,49 +286,35 @@ class TaskResource extends Resource
                             ->schema([
                                 Infolists\Components\Grid::make(['default' => 1, 'sm' => 3])
                                     ->schema([
-                                        Infolists\Components\TextEntry::make('name')
-                                            ->label('Criterion')
-                                            ->weight('medium'),
-
-                                        Infolists\Components\TextEntry::make('max_points')
-                                            ->label('Max Points')
-                                            ->badge()->color('info'),
-
-                                        Infolists\Components\TextEntry::make('description')
-                                            ->label('Description')
-                                            ->color('gray'),
+                                        Infolists\Components\TextEntry::make('name')->label('Criterion')->weight('medium'),
+                                        Infolists\Components\TextEntry::make('max_points')->label('Max Points')->badge()->color('info'),
+                                        Infolists\Components\TextEntry::make('description')->label('Description')->color('gray'),
                                     ]),
                             ])
                             ->contained(false),
                     ])
                     ->visible(fn ($record) => $record->activeRubrics->isNotEmpty()),
 
-                // Submission status
+                // Submission panel
                 Infolists\Components\Section::make('Your Submission')
                     ->icon('heroicon-o-document-arrow-up')
                     ->schema([
-                        // NOT yet submitted
-                        Infolists\Components\TextEntry::make('no_submission')
-                            ->label('')
-                            ->state('You have not submitted this task yet.')
-                            ->icon('heroicon-o-exclamation-circle')
-                            ->color('warning')
+                        Infolists\Components\TextEntry::make('not_submitted')
+                            ->label('')->state('You have not submitted this task yet.')
+                            ->icon('heroicon-o-exclamation-circle')->color('warning')
                             ->visible(fn ($record) =>
                             $record->submissions->where('student_id', Auth::id())->isEmpty()
                             ),
 
-                        // Already submitted
                         Infolists\Components\Group::make([
                             Infolists\Components\Grid::make(['default' => 2, 'sm' => 4])
                                 ->schema([
                                     Infolists\Components\TextEntry::make('submissions.0.status')
-                                        ->label('Status')
-                                        ->badge()
-                                        ->formatStateUsing(fn ($state) => str_replace('_', ' ', ucfirst($state))),
+                                        ->label('Status')->badge()
+                                        ->formatStateUsing(fn ($state) => str_replace('_', ' ', ucfirst($state ?? ''))),
 
                                     Infolists\Components\TextEntry::make('submissions.0.submitted_at')
-                                        ->label('Submitted')
-                                        ->since(),
+                                        ->label('Submitted')->since(),
 
                                     Infolists\Components\TextEntry::make('submissions.0.file_name')
                                         ->label('File'),
@@ -349,33 +327,30 @@ class TaskResource extends Resource
                                 ]),
 
                             Infolists\Components\TextEntry::make('submissions.0.student_notes')
-                                ->label('Your Notes')
-                                ->prose()
-                                ->columnSpanFull()
-                                ->visible(fn ($record) =>
-                                ! empty($record->submissions->first()?->student_notes)
-                                ),
+                                ->label('Your Notes')->prose()->columnSpanFull()
+                                ->visible(fn ($record) => ! empty($record->submissions->first()?->student_notes)),
 
                             Infolists\Components\TextEntry::make('submissions.0.review.score')
-                                ->label('Score')
-                                ->badge()
-                                ->color('success')
+                                ->label('Score')->badge()->color('success')
                                 ->formatStateUsing(fn ($state, $record) =>
-                                $state !== null
-                                    ? $state . ' / ' . $record->max_score
-                                    : 'Not yet graded'
+                                $state !== null ? $state . ' / ' . $record->max_score : 'Not yet graded'
                                 )
-                                ->visible(fn ($record) =>
-                                $record->isResultPublished()
-                                ),
+                                ->visible(fn ($record) => $record->isResultPublished()),
 
                             Infolists\Components\TextEntry::make('submissions.0.review.comments')
-                                ->label('Reviewer Comments')
-                                ->prose()
-                                ->columnSpanFull()
+                                ->label('Reviewer Comments')->prose()->columnSpanFull()
                                 ->visible(fn ($record) =>
                                     ! empty($record->submissions->first()?->review?->comments) &&
                                     $record->isResultPublished()
+                                ),
+
+                            // Resubmit notice
+                            Infolists\Components\TextEntry::make('resubmit_note')
+                                ->label('')
+                                ->state('⚠️ Your submission is awaiting review. You may replace it until a reviewer picks it up.')
+                                ->color('warning')
+                                ->visible(fn ($record) =>
+                                    $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
                                 ),
                         ])->visible(fn ($record) =>
                         $record->submissions->where('student_id', Auth::id())->isNotEmpty()
@@ -384,7 +359,7 @@ class TaskResource extends Resource
             ]);
     }
 
-    // ── Submission Wizard Form ────────────────────────────────────────────
+    // ── Submission Wizard ──────────────────────────────────────────────────
 
     public static function submissionWizard(): array
     {
@@ -407,12 +382,12 @@ class TaskResource extends Resource
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF, DOC or DOCX — maximum 10 MB'),
+                            ->helperText('PDF, DOC or DOCX — max 10 MB'),
 
                         Textarea::make('notes')
                             ->label('Notes for your Reviewer (Optional)')
                             ->rows(3)
-                            ->placeholder('Any context or comments about your submission...'),
+                            ->placeholder('Any context or comments about your work...'),
                     ]),
 
                 Wizard\Step::make('Confirm')
@@ -428,7 +403,7 @@ class TaskResource extends Resource
                             ->content(fn ($get) => $get('notes') ?: 'None'),
 
                         Checkbox::make('confirm_submission')
-                            ->label('I confirm this is my own work and I am ready to submit.')
+                            ->label('I confirm this is my own original work and I am ready to submit.')
                             ->required()
                             ->accepted(),
                     ]),
@@ -436,7 +411,7 @@ class TaskResource extends Resource
         ];
     }
 
-    // ── Submission Handler ────────────────────────────────────────────────
+    // ── Handlers ───────────────────────────────────────────────────────────
 
     public static function handleSubmission(Task $record, array $data): void
     {
@@ -470,22 +445,74 @@ class TaskResource extends Resource
             ]));
 
             Notification::make()
-                ->title('Submitted Successfully!')
+                ->title('Submitted!')
                 ->body('Your assignment has been submitted. You will be notified when it is reviewed.')
-                ->success()
-                ->send();
+                ->success()->send();
 
         } catch (\Exception $e) {
             Log::error('Submission: error', array_merge($context, [
-                'event' => 'submission_error',
-                'error' => $e->getMessage(),
+                'event' => 'submission_error', 'error' => $e->getMessage(),
             ]));
+            Notification::make()->title('Submission Failed')->body($e->getMessage())->danger()->send();
+        }
+    }
+
+    /**
+     * Replace an existing PENDING_REVIEW submission with a new file.
+     * The old file is deleted from storage and the submission record is updated.
+     * This is blocked at the UI level once the status changes from pending_review.
+     */
+    public static function handleResubmission(Task $record, array $data): void
+    {
+        $existing = Submission::where('task_id', $record->id)
+            ->where('student_id', Auth::id())
+            ->where('status', SubmissionTypes::PENDING_REVIEW->value)
+            ->first();
+
+        if (! $existing) {
+            Notification::make()
+                ->title('Resubmission Not Allowed')
+                ->body('This task can no longer be resubmitted — it may already be under review.')
+                ->warning()->send();
+            return;
+        }
+
+        $context = [
+            'candidate_id'  => Auth::id(),
+            'task_id'       => $record->id,
+            'submission_id' => $existing->id,
+            'ip'            => request()->ip(),
+        ];
+
+        Log::info('Resubmission: attempt', array_merge($context, ['event' => 'resubmission_attempt']));
+
+        try {
+            $fileDetails = UpcomingDeadlinesWidget::processSubmissionFile(
+                $data, $record, isResubmit: true, existingSubmission: $existing
+            );
+
+            $existing->update([
+                'file_name'     => $fileDetails['file_name'],
+                'file_path'     => $fileDetails['file_path'],
+                'file_size'     => $fileDetails['file_size'],
+                'file_type'     => $fileDetails['file_type'],
+                'student_notes' => $data['notes'] ?? $existing->student_notes,
+                'submitted_at'  => now(),
+                'status'        => SubmissionTypes::PENDING_REVIEW->value,
+            ]);
+
+            Log::info('Resubmission: success', array_merge($context, ['event' => 'resubmission_success']));
 
             Notification::make()
-                ->title('Submission Failed')
-                ->body('An error occurred: ' . $e->getMessage())
-                ->danger()
-                ->send();
+                ->title('Resubmission Successful')
+                ->body('Your new file has replaced the previous submission.')
+                ->success()->send();
+
+        } catch (\Exception $e) {
+            Log::error('Resubmission: error', array_merge($context, [
+                'event' => 'resubmission_error', 'error' => $e->getMessage(),
+            ]));
+            Notification::make()->title('Resubmission Failed')->body($e->getMessage())->danger()->send();
         }
     }
 

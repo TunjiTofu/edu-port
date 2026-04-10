@@ -48,6 +48,28 @@ class ProfileResource extends Resource
     {
         return $form
             ->schema([
+                // ── Passport Photo ───────────────────────────────────────────
+                Forms\Components\Section::make('Passport Photograph')
+                    ->icon('heroicon-o-camera')
+                    ->description('Upload a clear passport-size photo. Max 1 MB. JPEG or PNG only.')
+                    ->schema([
+                        Forms\Components\FileUpload::make('passport_photo')
+                            ->label('')
+                            ->image()
+                            ->disk(config('filesystems.default'))
+                            ->directory('passport-photos')
+                            ->visibility('private')
+                            ->imageEditor()
+                            ->imageCropAspectRatio('1:1')   // square crop for passport
+                            ->imageResizeTargetWidth('400') // keep file light
+                            ->imageResizeTargetHeight('400')
+                            ->maxSize(1024)                 // 1 MB limit
+                            ->acceptedFileTypes(['image/jpeg', 'image/png'])
+                            ->helperText('Square crop. Clear face. Max 1 MB.')
+                            ->columnSpanFull()
+                            ->avatar(),                     // renders as a circle preview
+                    ]),
+
                 // ── Personal Information ─────────────────────────────────────
                 Forms\Components\Section::make('Personal Information')
                     ->icon('heroicon-o-user')

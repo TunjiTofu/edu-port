@@ -8,6 +8,7 @@ use App\Filament\Student\Widgets\PerformanceChartWidget;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
+use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\EnsureUserIsStudent;
 use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
@@ -68,14 +69,15 @@ class StudentPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 ForcePasswordChange::class,
+                // Runs after ForcePasswordChange so candidates who need a
+                // password change are handled first, profile check second.
+                EnsureProfileComplete::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
                 EnsureUserIsStudent::class,
             ])
             ->navigationGroups([
-                // No icons on groups — individual resource items already have icons.
-                // Filament v3 does not allow both group icons and item icons simultaneously.
                 NavigationGroup::make('Learning')->collapsible(),
                 NavigationGroup::make('Submissions')->collapsible(),
                 NavigationGroup::make('Performance')->collapsible(),

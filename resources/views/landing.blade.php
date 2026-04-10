@@ -96,9 +96,12 @@
                 <h3 class="text-3xl font-bold text-white">Intending MG</h3>
             </div>
             <div class="p-6">
-                <p class="text-gray-600 mb-6 text-lg">Access learning materials and track progress</p>
-                <a href="{{ url('/student') }}" class="block w-full bg-gradient-to-r from-blue-800 to-blue-600 text-white text-center py-5 px-8 rounded-lg font-semibold text-lg hover:from-blue-900 hover:to-blue-700 transition-all duration-300">
-                    Access Intending MG Panel
+                <p class="text-gray-600 mb-4 text-lg">Access learning materials and track your progress</p>
+                <a href="{{ url('/student') }}" class="block w-full bg-gradient-to-r from-blue-800 to-blue-600 text-white text-center py-4 px-8 rounded-lg font-semibold text-lg hover:from-blue-900 hover:to-blue-700 transition-all duration-300 mb-3">
+                    <i class="fas fa-sign-in-alt mr-2"></i> Log In to Portal
+                </a>
+                <a href="{{ route('candidate.register') }}" class="block w-full bg-white border-2 border-blue-600 text-blue-700 text-center py-4 px-8 rounded-lg font-semibold text-lg hover:bg-blue-50 transition-all duration-300">
+                    <i class="fas fa-user-plus mr-2"></i> New Candidate? Register
                 </a>
             </div>
         </div>

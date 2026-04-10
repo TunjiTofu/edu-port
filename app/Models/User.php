@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RoleTypes;
+use Cache;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
+use Storage;
 
 class User extends Authenticatable implements FilamentUser
 {
@@ -32,6 +35,7 @@ class User extends Authenticatable implements FilamentUser
             'password'           => 'hashed',
             'is_active'          => 'boolean',
             'password_updated_at'=> 'datetime',
+            'profile_completed_at' => 'datetime',
         ];
     }
 
@@ -150,6 +154,88 @@ class User extends Authenticatable implements FilamentUser
     public function markPasswordAsChanged(): void
     {
         $this->update(['password_updated_at' => now()]);
+    }
+
+    // ── Profile Completion ─────────────────────────────────────────────────────
+
+    /**
+     * A candidate's profile is considered complete when they have:
+     *  - phone number
+     *  - church assigned
+     *  - district assigned
+     *  - passport photo uploaded
+     *
+     * Used by EnsureProfileComplete middleware to redirect incomplete profiles.
+     */
+    public function isProfileComplete(): bool
+    {
+        return ! empty($this->phone)
+            && ! is_null($this->church_id)
+            && ! is_null($this->district_id)
+            && ! empty($this->passport_photo);
+    }
+
+    /**
+     * Mark profile as completed, storing the timestamp.
+     * Called after the candidate saves a complete profile in EditProfile.
+     */
+    public function markProfileComplete(): void
+    {
+        if ($this->isProfileComplete() && is_null($this->profile_completed_at)) {
+            $this->update(['profile_completed_at' => now()]);
+        }
+    }
+
+    // ── Passport Photo URL ─────────────────────────────────────────────────────
+
+    /**
+     * Returns a usable URL for the passport photo.
+     * Cached for 23 hrs on S3 (same pattern as TrainingProgram::image_url).
+     */
+    public function getPassportPhotoUrlAttribute(): string
+    {
+        if (! $this->passport_photo) {
+            return asset('images/default-avatar.png');
+        }
+
+        try {
+            if (config('filesystems.default') === 's3') {
+                return Cache::remember(
+                    'passport_photo_url_' . md5($this->passport_photo),
+                    now()->addHours(23),
+                    fn () => Storage::disk('s3')->temporaryUrl($this->passport_photo, now()->addHours(24))
+                );
+            }
+
+            return Storage::disk('public')->url($this->passport_photo);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to generate passport photo URL', [
+                'user_id' => $this->id,
+                'error'   => $e->getMessage(),
+            ]);
+
+            return asset('images/default-avatar.png');
+        }
+    }
+
+    /**
+     * Filament reads this to render the avatar in the top-right user menu,
+     * the user panel header, and any place Filament displays the current user.
+     *
+     * Implementing HasAvatar and returning a non-null value here is all that
+     * is required — Filament handles the <img> rendering automatically.
+     *
+     * Returns null if no photo is set, which makes Filament fall back to its
+     * default initials avatar so the navbar never shows a broken image.
+     */
+    public function getFilamentAvatarUrl(): ?string
+    {
+        if (! $this->passport_photo) {
+            return null; // Filament will render initials instead
+        }
+
+        return $this->passport_photo_url; // reuse the cached accessor above
     }
 
     // ── Scopes ─────────────────────────────────────────────────────────────────
