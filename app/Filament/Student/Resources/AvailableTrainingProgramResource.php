@@ -45,14 +45,6 @@ class AvailableTrainingProgramResource extends Resource
                     Tables\Columns\Layout\Split::make([
 
                         // Program image — small circle on the left
-//                        Tables\Columns\ImageColumn::make('image_url')
-//                            ->label('')
-//                            ->circular()
-//                            ->size(64)
-//                            ->defaultImageUrl(asset('images/logo.png'))
-//                            ->grow(false)
-//                            ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
-
                         Tables\Columns\ImageColumn::make('image')
                             ->label('')
                             ->disk('public')
