@@ -13,7 +13,7 @@
     <div class="inline-flex items-center justify-center w-16 h-16 bg-green-600 rounded-2xl shadow-lg mb-3">
         <span class="text-3xl">🎓</span>
     </div>
-    <h1 class="text-2xl font-bold text-gray-900">MG Portfolio Portal</h1>
+    <h1 class="text-2xl font-bold text-gray-900">MG Portfolio</h1>
     <p class="text-sm text-gray-500 mt-1">New Candidate Registration</p>
 </div>
 
@@ -110,6 +110,17 @@
                 <input type="email" name="email" value="{{ old('email') }}" required
                        placeholder="you@example.com"
                        class="w-full px-4 py-3 border {{ $errors->has('email') ? 'border-red-400 bg-red-50' : 'border-gray-300' }} rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition">
+            </div>
+
+            {{-- MG Mentor --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    MG Mentor <span class="text-red-500">*</span>
+                </label>
+                <input type="text" name="mg_mentor" value="{{ old('mg_mentor') }}" required
+                       placeholder="Full name of your MG mentor"
+                       class="w-full px-4 py-3 border {{ $errors->has('mg_mentor') ? 'border-red-400 bg-red-50' : 'border-gray-300' }} rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition">
+                <p class="text-xs text-gray-400 mt-1">The full name of the minister who is mentoring you.</p>
             </div>
 
             {{-- Phone --}}

@@ -8,7 +8,9 @@ use App\Filament\Student\Widgets\PerformanceChartWidget;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
+use App\Filament\Widgets\AnnouncementsWidget;
 use App\Http\Middleware\EnsureProfileComplete;
+use App\Http\Middleware\EnsureProgramNotCompleted;
 use App\Http\Middleware\EnsureUserIsStudent;
 use App\Http\Middleware\ForcePasswordChange;
 use Filament\Http\Middleware\Authenticate;
@@ -53,6 +55,7 @@ class StudentPanelProvider extends PanelProvider
                 ChangePassword::class,
             ])
             ->widgets([
+                AnnouncementsWidget::class,  // Announcements from admin shown first
                 StudentProgressWidget::class,
                 RecentSubmissionsWidget::class,
                 UpcomingDeadlinesWidget::class,
@@ -72,6 +75,9 @@ class StudentPanelProvider extends PanelProvider
                 // Runs after ForcePasswordChange so candidates who need a
                 // password change are handled first, profile check second.
                 EnsureProfileComplete::class,
+                // Runs last — after auth and profile checks are satisfied.
+                // Locks graduated candidates to read-only mode.
+                EnsureProgramNotCompleted::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

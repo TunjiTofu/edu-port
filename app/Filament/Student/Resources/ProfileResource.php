@@ -27,11 +27,7 @@ class ProfileResource extends Resource
     public static function canView($record): bool   { return Auth::id() === $record->id; }
     public static function canEdit($record): bool   { return Auth::id() === $record->id; }
 
-    /**
-     * Override the navigation URL to skip the table index page and go
-     * directly to the edit form — so clicking "My Profile" opens the
-     * form immediately instead of showing a table + edit button.
-     */
+    // Skip table — go straight to edit form
     public static function getNavigationUrl(): string
     {
         return static::getUrl('edit', ['record' => Auth::id()]);
@@ -76,38 +72,40 @@ class ProfileResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->label('Full Name')
-                            ->disabled()
-                            ->dehydrated(false)
+                            ->disabled()->dehydrated(false)
                             ->prefixIcon('heroicon-o-user'),
 
                         Forms\Components\TextInput::make('email')
                             ->label('Email Address')
-                            ->email()
-                            ->disabled()
-                            ->dehydrated(false)
+                            ->disabled()->dehydrated(false)
                             ->prefixIcon('heroicon-o-envelope'),
 
                         Forms\Components\TextInput::make('phone')
                             ->label('Phone Number')
-                            ->tel()
-                            ->maxLength(20)
+                            ->tel()->maxLength(20)
+                            ->required()
                             ->prefixIcon('heroicon-o-phone')
-                            ->helperText('This is the only field you can update here.'),
+                            ->helperText('Required to complete your profile.'),
+
+                        Forms\Components\TextInput::make('mg_mentor')
+                            ->label('MG Mentor')
+                            ->maxLength(255)
+                            ->required()
+                            ->prefixIcon('heroicon-o-academic-cap')
+                            ->helperText('Full name of the minister mentoring you.'),
                     ])
                     ->columns(1),
 
                 // ── Church & District ────────────────────────────────────────
                 Forms\Components\Section::make('Church & District')
                     ->icon('heroicon-o-building-library')
-                    ->description('Your district is assigned by an administrator. You may update your church within your district.')
+                    ->description('Your district is set by an administrator. You may update your church within your district.')
                     ->schema([
                         Forms\Components\TextInput::make('district.name')
                             ->label('District')
-                            ->disabled()
-                            ->dehydrated(false)
+                            ->disabled()->dehydrated(false)
                             ->prefixIcon('heroicon-o-map'),
 
-                        // Editable church, scoped to candidate's current district
                         Forms\Components\Select::make('church_id')
                             ->label('Church')
                             ->options(function () {
@@ -119,57 +117,39 @@ class ProfileResource extends Resource
                             })
                             ->searchable()
                             ->required()
-                            ->prefixIcon('heroicon-o-building-library')
-                            ->helperText('You can change to another church within your district.'),
+                            ->prefixIcon('heroicon-o-building-library'),
                     ])
                     ->columns(2),
 
-                // ── Account Status ───────────────────────────────────────────
+                // ── Account Info ─────────────────────────────────────────────
                 Forms\Components\Section::make('Account Information')
                     ->icon('heroicon-o-shield-check')
                     ->schema([
                         Forms\Components\TextInput::make('role.name')
-                            ->label('Role')
-                            ->disabled()
-                            ->dehydrated(false)
+                            ->label('Role')->disabled()->dehydrated(false)
                             ->formatStateUsing(fn () => 'Candidate')
                             ->prefixIcon('heroicon-o-identification'),
 
                         Forms\Components\TextInput::make('password_updated_at')
-                            ->label('Password Last Changed')
-                            ->disabled()
-                            ->dehydrated(false)
+                            ->label('Password Last Changed')->disabled()->dehydrated(false)
                             ->formatStateUsing(fn ($state) => $state
                                 ? \Carbon\Carbon::parse($state)->format('M j, Y g:i A')
-                                : 'Never — default password still active'
+                                : 'Never — default password active'
                             )
                             ->prefixIcon('heroicon-o-key'),
-
-                        Forms\Components\TextInput::make('email_verified_at')
-                            ->label('Email Verified')
-                            ->disabled()
-                            ->dehydrated(false)
-                            ->formatStateUsing(fn ($state) => $state
-                                ? \Carbon\Carbon::parse($state)->format('M j, Y')
-                                : 'Not verified'
-                            )
-                            ->prefixIcon('heroicon-o-check-badge'),
                     ])
                     ->columns(2)
-                    ->collapsible()
-                    ->collapsed(false),
+                    ->collapsible()->collapsed(),
             ]);
     }
 
-    // Table kept minimal — the index page redirects to edit directly
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name'),
                 Tables\Columns\TextColumn::make('email'),
-                Tables\Columns\TextColumn::make('phone')->placeholder('Not provided'),
-                Tables\Columns\TextColumn::make('district.name')->label('District'),
+                Tables\Columns\TextColumn::make('phone')->placeholder('Not set'),
                 Tables\Columns\TextColumn::make('church.name')->label('Church'),
             ])
             ->emptyStateHeading('My Profile')

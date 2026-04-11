@@ -158,7 +158,7 @@
 
 <script>
     // ── State ─────────────────────────────────────────────────────────
-    let seconds = 2 * 60;   // 10 minutes, matching OTP cache TTL
+    let seconds = 10 * 60;   // 10 minutes, matching OTP cache TTL
     let expired = false;
 
     const countdownEl      = document.getElementById('countdown');

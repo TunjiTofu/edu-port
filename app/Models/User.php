@@ -186,6 +186,35 @@ class User extends Authenticatable implements FilamentUser
         }
     }
 
+    // ── Program Completion (Graduation) ────────────────────────────────────────
+
+    /**
+     * True when an admin has marked this candidate as having completed
+     * the program. Graduated candidates are read-only — they cannot submit,
+     * edit their profile, or enroll in new programs.
+     */
+    public function hasCompletedProgram(): bool
+    {
+        return ! is_null($this->program_completed_at);
+    }
+
+    /**
+     * Mark candidate as having completed the program.
+     * Called by admin via the UserResource "Mark as Graduated" action.
+     */
+    public function markProgramCompleted(): void
+    {
+        $this->update(['program_completed_at' => now()]);
+    }
+
+    /**
+     * Reverse graduation — admin can unlock a candidate if marked by mistake.
+     */
+    public function unmarkProgramCompleted(): void
+    {
+        $this->update(['program_completed_at' => null]);
+    }
+
     // ── Passport Photo URL ─────────────────────────────────────────────────────
 
     /**
