@@ -11,9 +11,13 @@
 {{-- Brand --}}
 <div class="text-center mb-6">
     <div class="inline-flex items-center justify-center w-16 h-16 bg-green-600 rounded-2xl shadow-lg mb-3">
-        <span class="text-3xl">🎓</span>
+        <span class="text-3xl">
+            <img src="{{ asset('images/logo.png') }}" alt="MG Portfolio Logo">
+        </span>
+{{--        <img src="{{ asset('images/logo.png') }}" alt="MG Portfolio Logo">--}}
+
     </div>
-    <h1 class="text-2xl font-bold text-gray-900">MG Portfolio</h1>
+    <h1 class="text-2xl font-bold text-gray-900">MG Portfolio Portal</h1>
     <p class="text-sm text-gray-500 mt-1">New Candidate Registration</p>
 </div>
 
@@ -86,7 +90,8 @@
                     <input type="file" id="passport_photo" name="passport_photo"
                            accept="image/jpeg,image/png" class="sr-only" required>
                     <p class="text-xs text-gray-400 text-center">
-                        Clear face, square or portrait. JPEG/PNG, max 1 MB, min 200×200px.
+                        Clear face, square or portrait. JPEG/PNG, max 2 MB, min 200×200px. <br/>
+                        <span class="text-sm text-red-500 text-center">This must be a passport photo of you on AYM Uniform.</span>
                     </p>
                 </div>
                 @error('passport_photo')

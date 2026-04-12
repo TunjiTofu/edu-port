@@ -350,7 +350,7 @@
     <div class="nav-inner">
         <a href="/" class="nav-brand">
             <img src="{{ asset('images/logo.png') }}" alt="MG Portfolio Logo">
-            <span class="nav-name">MG Portfolio</span>
+            <span class="nav-name">MG Portfolio Portal</span>
         </a>
         <ul class="nav-links">
             <li><a href="#about">About MG</a></li>
@@ -388,7 +388,7 @@
                 </p>
                 <div class="hero-actions fu fu4">
                     <a href="{{ route('candidate.register') }}" class="btn btn-primary">Begin Your Journey →</a>
-                    <a href="#about" class="btn btn-outline">What is Master Guide?</a>
+                    <a href="#about" class="btn btn-outline">Master Guide?</a>
                 </div>
                 <div class="hero-stats fu fu5">
                     <div><div class="stat-num">4</div><div class="stat-label">Growth Pillars</div></div>

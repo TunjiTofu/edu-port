@@ -98,21 +98,46 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $port       = (int) config('mail.mailers.smtp.port', 465);
-        $encryption = strtolower((string) config('mail.mailers.smtp.encryption', 'ssl'));
+        $encryption = strtolower((string) config('mail.mailers.smtp.encryption', 'tls'));
 
-        // Determine the correct Symfony Mailer scheme:
-        //   port 465 OR encryption ssl → smtps (implicit TLS)
-        //   port 587 AND encryption tls → smtp  (STARTTLS)
+        // ── Scheme ────────────────────────────────────────────────────────
+        // smtps = implicit TLS on port 465
+        // smtp  = STARTTLS on port 587 (more compatible with shared hosting)
+        //
+        // RECOMMENDED .env for cPanel:
+        //   MAIL_PORT=587
+        //   MAIL_ENCRYPTION=tls
+        //
+        // This avoids the OpenSSL "wrong version number" error that occurs
+        // when PHP's stream wrapper negotiates SSL on port 465 with a server
+        // that expects a different TLS handshake order.
         $scheme = ($port === 465 || $encryption === 'ssl') ? 'smtps' : 'smtp';
 
         config([
-            // THIS is the key Laravel MailManager actually reads —
-            // it short-circuits the broken auto-detection when present.
             'mail.mailers.smtp.scheme'  => $scheme,
-            'mail.mailers.smtp.timeout' => 30,
+            // Short timeout — fail fast so a dead mail server does not hang
+            // the request for 60s. Non-blocking dispatch makes this safe.
+            'mail.mailers.smtp.timeout' => 15,
+            // ── SSL stream context ────────────────────────────────────────
+            // The "wrong version number" OpenSSL error happens when PHP tries
+            // an old TLS record version that the server rejects.
+            // These options force TLS 1.2+ and relax peer verification so
+            // a self-signed or mismatched cPanel cert does not block delivery.
+            //
+            // NOTE: verify_peer should be re-enabled once you have a valid
+            // cert on the mail host. For production with a real cert, set
+            // MAIL_VERIFY_PEER=true in .env and read it here.
+            'mail.mailers.smtp.stream'  => [
+                'ssl' => [
+                    'allow_self_signed'      => true,
+                    'verify_peer'            => false,
+                    'verify_peer_name'       => false,
+                    'crypto_method'          => STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+                        | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT,
+                ],
+            ],
         ]);
 
-        // Bust the cached mailer so the corrected scheme is used immediately.
         $this->app->forgetInstance('mail.manager');
         $this->app->forgetInstance('mailer');
     }
