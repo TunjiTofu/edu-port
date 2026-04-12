@@ -65,6 +65,6 @@ class EnsureProfileComplete
 
         session()->flash('warning', 'Please complete your profile before accessing the portal.');
 
-        return redirect('/student/profile/'. $user->id . '/edit');
+        return redirect('/student/profiles/'. $user->id . '/edit');
     }
 }
