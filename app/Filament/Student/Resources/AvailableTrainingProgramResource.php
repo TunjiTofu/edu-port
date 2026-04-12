@@ -102,7 +102,7 @@ class AvailableTrainingProgramResource extends Resource
 
                                     $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
 
-                                    $days = now()->diffInDays($carbon, false);
+                                    $days = round(now()->diffInDays($carbon, false));
                                     $hours = round(now()->diffInHours($carbon, false),1);
 
                                     $label = match (true) {

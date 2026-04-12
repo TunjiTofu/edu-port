@@ -41,6 +41,7 @@ class CandidateRegistrationController extends Controller
                 'required', 'string', 'regex:/^0[789][01]\d{8}$/',
                 'unique:users,phone',
             ],
+            'mg_mentor'   => ['required', 'string', 'max:255'],
             'district_id' => ['required', 'exists:districts,id'],
             'church_id'   => ['required', 'exists:churches,id'],
             'password'    => [
@@ -58,18 +59,19 @@ class CandidateRegistrationController extends Controller
                 'required',
                 'image',
                 'mimes:jpeg,png',
-                'max:1024',             // 1 MB max
+                'max:1024',
                 'dimensions:min_width=200,min_height=200',
             ],
             'terms'       => ['accepted'],
         ], [
-            'phone.regex'                    => 'Phone must be a valid 11-digit Nigerian number (e.g. 08012345678).',
-            'phone.unique'                   => 'This phone number is already registered.',
-            'email.unique'                   => 'This email address is already registered.',
-            'passport_photo.required'        => 'A passport photograph is required.',
-            'passport_photo.max'             => 'Passport photo must be under 1 MB.',
-            'passport_photo.dimensions'      => 'Photo must be at least 200×200 pixels.',
-            'terms.accepted'                 => 'You must accept the Terms & Conditions to register.',
+            'phone.regex'               => 'Phone must be a valid 11-digit Nigerian number (e.g. 08012345678).',
+            'phone.unique'              => 'This phone number is already registered.',
+            'email.unique'              => 'This email address is already registered.',
+            'mg_mentor.required'        => 'Please enter the full name of your MG mentor.',
+            'passport_photo.required'   => 'A passport photograph is required.',
+            'passport_photo.max'        => 'Passport photo must be under 1 MB.',
+            'passport_photo.dimensions' => 'Photo must be at least 200×200 pixels.',
+            'terms.accepted'            => 'You must accept the Terms & Conditions to register.',
         ]);
 
         // Verify church belongs to selected district
@@ -93,6 +95,7 @@ class CandidateRegistrationController extends Controller
             'name'           => $validated['name'],
             'email'          => $validated['email'],
             'phone'          => $validated['phone'],
+            'mg_mentor'      => $validated['mg_mentor'],
             'district_id'    => $validated['district_id'],
             'church_id'      => $validated['church_id'],
             'password'       => $validated['password'],
@@ -171,6 +174,7 @@ class CandidateRegistrationController extends Controller
             'name'                => $pending['name'],
             'email'               => $pending['email'],
             'phone'               => $pending['phone'],
+            'mg_mentor'           => $pending['mg_mentor'],
             'password'            => Hash::make($pending['password']),
             'role_id'             => $studentRole->id,
             'district_id'         => $pending['district_id'],
@@ -178,9 +182,6 @@ class CandidateRegistrationController extends Controller
             'passport_photo'      => $pending['passport_photo'],
             'is_active'           => true,
             'password_updated_at' => now(),
-            // Profile is NOT yet marked complete here — candidate still needs
-            // to confirm their details on first login. If all fields are set,
-            // markProfileComplete() will set the timestamp.
         ]);
 
         // Mark profile complete immediately if all data came through registration

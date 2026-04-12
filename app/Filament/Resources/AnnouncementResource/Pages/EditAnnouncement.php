@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Filament\Resources\SubmissionResource\Pages;
+namespace App\Filament\Resources\AnnouncementResource\Pages;
 
-use App\Filament\Resources\SubmissionResource;
+use App\Filament\Resources\AnnouncementResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
-class EditSubmission extends EditRecord
+class EditAnnouncement extends EditRecord
 {
-    protected static string $resource = SubmissionResource::class;
+    protected static string $resource = AnnouncementResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -20,6 +20,6 @@ class EditSubmission extends EditRecord
 
     protected function getRedirectUrl(): string
     {
-        return static::getResource()::getUrl('view', ['record' => $this->record]);
+        return static::getResource()::getUrl('index');
     }
 }

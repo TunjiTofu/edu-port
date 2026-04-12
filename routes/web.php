@@ -372,7 +372,7 @@ Route::prefix('candidate')->name('candidate.')->group(function () {
     Route::get('/verify-otp', [CandidateRegistrationController::class, 'showVerifyOtp'])->name('verify-otp');
     // 3 attempts per IP per 10 minutes — allows for mistyping without locking out
     Route::post('/verify-otp', [CandidateRegistrationController::class, 'submitVerifyOtp'])
-        ->middleware('throttle:3,10')
+        ->middleware('throttle:5,10')
         ->name('verify-otp.submit');
 
     // 3 resends per IP per 10 minutes — tight because the UI already locks
