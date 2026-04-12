@@ -382,7 +382,7 @@ class TaskResource extends Resource
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF, DOC or DOCX — max 10 MB'),
+                            ->helperText('PDF, DOC or DOCX — max 2 MB'),
 
                         Textarea::make('notes')
                             ->label('Notes for your Reviewer (Optional)')

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MG Portfolio — Master Guide Candidate Portal</title>
-    <meta name="description" content="The official digital portfolio platform for Master Guide candidates in the Seventh-day Adventist Church. Submit tasks, track progress, and receive expert feedback.">
+    <meta name="description" content="The official digital portfolio platform for Master Guide candidates in the Seventh-day Adventist Church Ogun Conference. Submit tasks, track progress, and receive expert feedback.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
@@ -170,7 +170,7 @@
         .step:hover { background: rgba(255,255,255,.04); }
         .step-num { font-family: 'Playfair Display', serif; font-size: 3rem; font-weight: 900; color: rgba(34,197,94,.2); line-height: 1; margin-bottom: 18px; }
         .step h4 { font-family: 'DM Sans', sans-serif; font-size: .92rem; font-weight: 600; color: var(--white); margin-bottom: 8px; }
-        .step p  { font-size: .8rem; color: rgba(255,255,255,.48); line-height: 1.7; }
+        .step p  { font-size: .8rem; color: rgba(200,200,200,1); line-height: 1.7; }
 
         /* ── Program Info tabs (Share + Timeline + Requirements) ── */
         .program-section { background: var(--white); }
@@ -327,12 +327,69 @@
         .fu5 { animation-delay:.56s; }
 
         /* ── Mobile ── */
+        /* ── Hamburger button (mobile only) ── */
+        .nav-hamburger {
+            display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            width: 40px; height: 40px; border: none; background: transparent;
+            cursor: pointer; gap: 5px; border-radius: 8px;
+            transition: background .2s;
+        }
+        .nav-hamburger:hover { background: var(--green-100); }
+        .nav-hamburger span {
+            display: block; width: 22px; height: 2px;
+            background: var(--ink); border-radius: 2px;
+            transition: transform .3s, opacity .3s, width .3s;
+            transform-origin: center;
+        }
+        /* X state */
+        .nav-hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .nav-hamburger.open span:nth-child(2) { opacity: 0; width: 0; }
+        .nav-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+        /* ── Mobile drawer ── */
+        .mobile-menu {
+            display: none; /* hidden on desktop */
+            position: fixed; top: 68px; left: 0; right: 0; z-index: 99;
+            background: rgba(246,251,246,.97);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(34,197,94,.14);
+            padding: 0;
+            max-height: 0; overflow: hidden;
+            transition: max-height .35s ease, padding .35s ease;
+        }
+        .mobile-menu.open { max-height: 400px; padding: 8px 0 16px; }
+        .mobile-menu ul { list-style: none; padding: 0 20px; }
+        .mobile-menu ul li a {
+            display: block; padding: 13px 12px;
+            font-size: .95rem; font-weight: 500; color: var(--ink-soft);
+            text-decoration: none; border-radius: 10px;
+            transition: background .15s, color .15s;
+        }
+        .mobile-menu ul li a:hover { background: var(--green-100); color: var(--green-700); }
+        .mobile-menu .mobile-register {
+            margin: 8px 20px 4px;
+        }
+        .mobile-menu .mobile-register a {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 13px; border-radius: 100px;
+            background: var(--green-600); color: var(--white);
+            font-weight: 600; font-size: .9rem; text-decoration: none;
+            box-shadow: 0 4px 14px rgba(22,163,74,.28);
+            transition: background .2s;
+        }
+        .mobile-menu .mobile-register a:hover { background: var(--green-700); }
+
         @media (max-width: 900px) {
             .hero-inner { grid-template-columns: 1fr; gap: 40px; }
             .hero-cards { display: none; }
             .about-grid { grid-template-columns: 1fr; gap: 40px; }
             .steps-grid { grid-template-columns: 1fr 1fr; }
-            .nav-links { display: none; }
+            /* Hide desktop links, show hamburger + mobile menu */
+            .nav-links { display: none !important; }
+            .btn.btn-primary.nav-register { display: none; } /* hide desktop register btn */
+            .nav-hamburger { display: flex; }
+            .mobile-menu { display: block; }
         }
         @media (max-width: 600px) {
             .steps-grid { grid-template-columns: 1fr; }
@@ -361,12 +418,35 @@
             <li><a href="#tutorials">Tutorials</a></li>
             <li><a href="#access">Sign In</a></li>
         </ul>
-        <a href="{{ route('candidate.register') }}" class="btn btn-primary">
+        <a href="{{ route('candidate.register') }}" class="btn btn-primary nav-register">
             <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
             Register
         </a>
+        {{-- Hamburger — visible on mobile only --}}
+        <button class="nav-hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false">
+            <span></span><span></span><span></span>
+        </button>
     </div>
 </nav>
+
+{{-- ── Mobile menu drawer ── --}}
+<div class="mobile-menu" id="mobile-menu" role="navigation" aria-label="Mobile navigation">
+    <ul>
+        <li><a href="#about"        onclick="closeMobileMenu()">About MG</a></li>
+        <li><a href="#requirements" onclick="closeMobileMenu()">Requirements</a></li>
+        @if(isset($announcements) && $announcements->isNotEmpty())
+            <li><a href="#announcements" onclick="closeMobileMenu()">Announcements</a></li>
+        @endif
+        <li><a href="#tutorials"    onclick="closeMobileMenu()">Tutorials</a></li>
+        <li><a href="#access"       onclick="closeMobileMenu()">Sign In</a></li>
+    </ul>
+    <div class="mobile-register">
+        <a href="{{ route('candidate.register') }}" onclick="closeMobileMenu()">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+            Register as Candidate
+        </a>
+    </div>
+</div>
 
 {{-- ── Hero ── --}}
 <section class="hero">
@@ -380,7 +460,6 @@
                     <p>Seventh-day Adventist Church of Ogun Conference · Youth Ministry</p>
                 </div>
                 <h1 class="fu fu2">
-{{--                    The <em>Ph.D.</em> of<br>youth ministry<br>leadership.--}}
                     The <em>Apex</em> of<br>youth ministry<br>leadership.
                 </h1>
                 <p class="hero-desc fu fu3">
@@ -388,7 +467,7 @@
                 </p>
                 <div class="hero-actions fu fu4">
                     <a href="{{ route('candidate.register') }}" class="btn btn-primary">Begin Your Journey →</a>
-                    <a href="#about" class="btn btn-outline">Master Guide?</a>
+                    <a href="#about" class="btn btn-outline">What is Master Guide all about?</a>
                 </div>
                 <div class="hero-stats fu fu5">
                     <div><div class="stat-num">4</div><div class="stat-label">Growth Pillars</div></div>
@@ -429,7 +508,7 @@
     <div class="container">
         <div class="about-grid">
             <div class="about-text">
-                <div class="pill">What is Master Guide?</div>
+                <div class="pill">What is Master Guide all about?</div>
                 <h2>The highest level of youth leadership in the church.</h2>
                 <p>
                     The Master Guide (MG) curriculum is the General Conference Youth Ministries Department's flagship leadership training program. It is the <strong>"Ph.D." of youth ministry</strong> — the expert, advisor, and promoter for Adventurers and Pathfinders.
@@ -481,7 +560,7 @@
 @if(isset($announcements) && $announcements->isNotEmpty())
     <section class="section-sm ann-section" id="announcements">
         <div class="container">
-            <div class="pill">📣 From the Coordinator</div>
+            <div class="pill">📣 From the Coordinators</div>
             <h2 style="font-size: clamp(1.6rem, 3vw, 2.4rem); margin-bottom: 6px;">Announcements</h2>
             <p style="color:#6b7280; font-size:.88rem;">Latest updates from the MG Portfolio team.</p>
             <div class="ann-grid">
@@ -760,16 +839,16 @@
             <div class="timeline-wrap">
                 @php
                     $events = [
-                        ['April 13, 2026',                  'Registration of Candidates',                       false],
+                        ['April 13 - 30, 2026',                  'Registration of Candidates',                       false],
                         ['April 25, 2026',                  'Training of Trainers and Trainees',                false],
                         ['June 30, 2026',                   'First Submission of Portfolio',                    false],
                         ['August 31, 2026',                 'Second / Final Submission of Portfolio',           false],
-                        ['September 01 – 30, 2025',         'Review / Assessment of Portfolio',                 false],
-                        ['September 19, 2026',              'Short-listing of Qualified Candidates',            false],
+                        ['September 01 – 30, 2026',         'Review / Assessment of Portfolio',                 false],
+                        ['September 19, 2026',               'Short-listing of Qualified Candidates',            false],
                         ['September 26 – October 17, 2026',           'Interview of Candidates',                          false],
                         ['October 31, 2026',                'Release of List of Successful Candidates',         false],
-//                        ['October 26 – November 15, 2025',  'Grooming of Successful Candidates',                false],
-                        ['November 27, 2025',               'Investiture Ceremony',                             true],
+                        ['November 1 – 21, 2026',  'Grooming of Successful Candidates',                false],
+                        ['November 28, 2026',               'Investiture Ceremony',                             true],
                     ];
                 @endphp
                 @foreach ($events as [$date, $name, $special])
@@ -939,7 +1018,7 @@
         </div>
         <div style="text-align:center; margin-top:48px;">
             <p style="color:rgba(255,255,255,.45); font-size:.85rem; margin-bottom:16px;">
-                New to MG Portfolio? Register to begin your candidacy.
+                New to MG Portfolio Portal? Register to begin your candidacy.
             </p>
             <a href="{{ route('candidate.register') }}" class="btn btn-gold">Create Candidate Account →</a>
         </div>
@@ -949,7 +1028,7 @@
 {{-- ── Footer ── --}}
 <footer>
     <p>
-        © {{ date('Y') }} <strong>MG Portfolio</strong> — Seventh-day Adventist Church Youth Ministry of Ogun Conference.
+        © {{ date('Y') }} <strong>MG Portfolio</strong> — Seventh-day Adventist Church of Ogun Conference Youth Ministry.
         &nbsp;·&nbsp;
         <a href="{{ route('candidate.terms') }}">Terms &amp; Conditions</a>
         &nbsp;·&nbsp;
@@ -958,6 +1037,34 @@
 </footer>
 
 <script>
+    // ── Mobile menu ──────────────────────────────────────────────────────
+    const hamburger   = document.getElementById('hamburger');
+    const mobileMenu  = document.getElementById('mobile-menu');
+
+    function closeMobileMenu() {
+        hamburger.classList.remove('open');
+        mobileMenu.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
+    }
+
+    hamburger.addEventListener('click', () => {
+        const isOpen = mobileMenu.classList.toggle('open');
+        hamburger.classList.toggle('open', isOpen);
+        hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+
+    // Close when clicking anywhere outside the nav / drawer
+    document.addEventListener('click', (e) => {
+        if (! e.target.closest('nav') && ! e.target.closest('.mobile-menu')) {
+            closeMobileMenu();
+        }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMobileMenu();
+    });
+
     // Requirements accordion
     function toggleReq(btn) {
         const body = btn.nextElementSibling;
