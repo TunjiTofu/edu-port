@@ -132,6 +132,28 @@ class UpcomingDeadlinesWidget extends BaseWidget
                         ]),
                     ])
                     ->action(function ($record, $data) {
+                        // ── Server-side guard — deadline check ─────────────
+                        // The widget query already excludes submitted tasks,
+                        // but the due_date check must also be validated here
+                        // because a page can stay open past midnight and a
+                        // user on a stale page could still trigger the action.
+                        if ($record->due_date && $record->due_date->isPast()) {
+                            Notification::make()
+                                ->title('Deadline Passed')
+                                ->body('The deadline for this task has passed. Submissions are no longer accepted.')
+                                ->danger()->send();
+                            return;
+                        }
+
+                        $candidate = Auth::user();
+                        if ($candidate?->hasCompletedProgram() || $candidate?->isDisqualified()) {
+                            Notification::make()
+                                ->title('Submission Not Allowed')
+                                ->body('Your account does not have permission to submit assignments.')
+                                ->danger()->send();
+                            return;
+                        }
+
                         $context = [
                             'candidate_id'    => Auth::id(),
                             'candidate_email' => Auth::user()?->email,

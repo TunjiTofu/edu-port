@@ -215,6 +215,50 @@ class User extends Authenticatable implements FilamentUser
         $this->update(['program_completed_at' => null]);
     }
 
+    // ── Disqualification ───────────────────────────────────────────────────────
+
+    /**
+     * A disqualified candidate CANNOT log in at all.
+     * Harder than deactivation (is_active=false) in that it carries a reason
+     * and is intended to be temporary — the candidate can be restored once
+     * they meet requirements.
+     *
+     * Disqualification vs deactivation:
+     *   - is_active=false  → general account suspension, no reason required
+     *   - disqualified_at  → formal program disqualification with a stated reason
+     */
+    public function isDisqualified(): bool
+    {
+        return ! is_null($this->disqualified_at);
+    }
+
+    /**
+     * Disqualify a candidate. Also deactivates the account so both checks
+     * fail independently — reverting disqualification also restores access.
+     */
+    public function disqualify(string $reason): void
+    {
+        $this->update([
+            'disqualified_at'          => now(),
+            'disqualification_reason'  => $reason,
+            'is_active'                => false, // Belt and braces — blocks login even if disqualified_at check is skipped
+        ]);
+    }
+
+    /**
+     * Restore a disqualified candidate.
+     * Re-activates the account so they can log in again.
+     */
+    public function undisqualify(): void
+    {
+        $this->update([
+            'disqualified_at'          => null,
+            'disqualification_reason'  => null,
+            'is_active'                => true,
+        ]);
+    }
+
+
     // ── Passport Photo URL ─────────────────────────────────────────────────────
 
     /**

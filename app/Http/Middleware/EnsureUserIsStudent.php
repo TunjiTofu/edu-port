@@ -15,36 +15,47 @@ class EnsureUserIsStudent
     {
         $user = Filament::auth()->user();
 
+        // ── Not authenticated or wrong role ────────────────────────────────
         if (! $user || ! $user->isStudent()) {
             if ($user) {
-                Log::warning('EnsureUserIsStudent: non-candidate attempted to access candidate panel', [
-                    'event'      => 'candidate_panel_access_denied',
-                    'user_id'    => $user->id,
-                    'user_email' => $user->email,
-                    'role'       => $user->role?->name ?? 'unknown',
-                    'path'       => $request->path(),
-                    'ip'         => $request->ip(),
-                    'user_agent' => $request->userAgent(),
+                Log::warning('EnsureUserIsStudent: non-candidate access attempt', [
+                    'event'   => 'candidate_panel_access_denied',
+                    'user_id' => $user->id,
+                    'role'    => $user->role?->name,
+                    'ip'      => $request->ip(),
                 ]);
-
                 Notification::make()
                     ->title('Access Denied')
                     ->body('You do not have candidate privileges to access this area.')
-                    ->danger()
-                    ->persistent()
-                    ->send();
-            } else {
-                Log::info('EnsureUserIsStudent: unauthenticated request to candidate panel', [
-                    'event' => 'candidate_panel_unauthenticated',
-                    'path'  => $request->path(),
-                    'ip'    => $request->ip(),
-                ]);
+                    ->danger()->persistent()->send();
             }
-
             Filament::auth()->logout();
-
             return redirect()->guest(Filament::getLoginUrl())
-                ->with('error', 'Candidate privileges required to access this area.');
+                ->with('error', 'Candidate privileges required.');
+        }
+
+        // ── Deactivated account ────────────────────────────────────────────
+        if (! $user->is_active) {
+            Log::warning('EnsureUserIsStudent: deactivated account login attempt', [
+                'event'   => 'candidate_account_deactivated',
+                'user_id' => $user->id,
+                'ip'      => $request->ip(),
+            ]);
+            Filament::auth()->logout();
+            return redirect()->guest(Filament::getLoginUrl())
+                ->with('error', 'Your account has been deactivated. Please contact your administrator.');
+        }
+
+        // ── Disqualified candidate ─────────────────────────────────────────
+        if ($user->isDisqualified()) {
+            Log::warning('EnsureUserIsStudent: disqualified candidate login attempt', [
+                'event'   => 'candidate_disqualified_login',
+                'user_id' => $user->id,
+                'ip'      => $request->ip(),
+            ]);
+            Filament::auth()->logout();
+            return redirect()->guest(Filament::getLoginUrl())
+                ->with('error', 'Your candidacy has been suspended. Please contact your administrator for more information.');
         }
 
         return $next($request);

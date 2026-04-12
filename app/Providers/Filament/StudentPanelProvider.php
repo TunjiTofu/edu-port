@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Student\Pages\ChangePassword;
+use App\Filament\Student\Pages\StudentLogin;
 use App\Filament\Student\Resources\ChangePasswordResource;
 use App\Filament\Student\Widgets\PerformanceChartWidget;
 use App\Filament\Student\Widgets\RecentSubmissionsWidget;
@@ -37,7 +38,7 @@ class StudentPanelProvider extends PanelProvider
         return $panel
             ->id('student')
             ->path('student')
-            ->login()
+            ->login(StudentLogin::class)
             ->colors(['primary' => Color::Green])
             ->brandName('MG Portfolio — Candidate Portal')
             ->favicon(asset('favicon.ico'))
@@ -72,8 +73,6 @@ class StudentPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 ForcePasswordChange::class,
-                // Runs after ForcePasswordChange so candidates who need a
-                // password change are handled first, profile check second.
                 EnsureProfileComplete::class,
                 // Runs last — after auth and profile checks are satisfied.
                 // Locks graduated candidates to read-only mode.

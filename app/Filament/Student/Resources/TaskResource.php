@@ -129,12 +129,12 @@ class TaskResource extends Resource
                                         ->formatStateUsing(function ($state, $record) {
                                             if (! $state) return '🗓 No deadline';
                                             $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-                                            $days = now()->diffInDays($c, false);
+                                            $days = round(now()->diffInDays($c, false));
                                             if ($record->submissions->isNotEmpty()) return '📤 Submitted';
                                             return match (true) {
                                                 $days < 0  => '🔴 Overdue — ' . $c->format('M j'),
                                                 $days == 0 => '⚠️ Due today',
-                                                $days <= 3 => "⚠️ {$days}d left",
+                                                $days <= 3 => "⚠️ {$days}days left",
                                                 default    => '📅 ' . $c->format('M j, Y'),
                                             };
                                         }),
@@ -422,6 +422,47 @@ class TaskResource extends Resource
             'ip'           => request()->ip(),
         ];
 
+        // ── Server-side guards — cannot be bypassed by UI manipulation ────
+        // Check 1: task overdue
+        if ($record->due_date && $record->due_date->isPast()) {
+            Log::warning('Submission: blocked — task overdue', array_merge($context, [
+                'event'    => 'submission_blocked_overdue',
+                'due_date' => $record->due_date->toDateTimeString(),
+            ]));
+            Notification::make()
+                ->title('Deadline Passed')
+                ->body('The deadline for this task has passed. Submissions are no longer accepted.')
+                ->danger()->send();
+            return;
+        }
+
+        // Check 2: candidate graduated or disqualified
+        $candidate = Auth::user();
+        if ($candidate?->hasCompletedProgram() || $candidate?->isDisqualified()) {
+            Log::warning('Submission: blocked — candidate locked', array_merge($context, [
+                'event'        => 'submission_blocked_candidate_locked',
+                'graduated'    => $candidate->hasCompletedProgram(),
+                'disqualified' => $candidate->isDisqualified(),
+            ]));
+            Notification::make()
+                ->title('Submission Not Allowed')
+                ->body('Your account does not have permission to submit assignments.')
+                ->danger()->send();
+            return;
+        }
+
+        // Check 3: already submitted
+        if (Submission::where('task_id', $record->id)->where('student_id', Auth::id())->exists()) {
+            Log::warning('Submission: blocked — already submitted', array_merge($context, [
+                'event' => 'submission_blocked_duplicate',
+            ]));
+            Notification::make()
+                ->title('Already Submitted')
+                ->body('You have already submitted this task. Use Resubmit to replace it while it awaits review.')
+                ->warning()->send();
+            return;
+        }
+
         Log::info('Submission: attempt', array_merge($context, ['event' => 'submission_attempt']));
 
         try {
@@ -464,6 +505,32 @@ class TaskResource extends Resource
      */
     public static function handleResubmission(Task $record, array $data): void
     {
+        // ── Server-side guards ─────────────────────────────────────────────
+        // Even though the UI hides the resubmit button for overdue tasks,
+        // validate server-side so a stale page load cannot bypass the check.
+        if ($record->due_date && $record->due_date->isPast()) {
+            Log::warning('Resubmission: blocked — task overdue', [
+                'event'        => 'resubmission_blocked_overdue',
+                'candidate_id' => Auth::id(),
+                'task_id'      => $record->id,
+                'due_date'     => $record->due_date->toDateTimeString(),
+            ]);
+            Notification::make()
+                ->title('Deadline Passed')
+                ->body('The deadline for this task has passed. Resubmission is no longer accepted.')
+                ->danger()->send();
+            return;
+        }
+
+        $candidate = Auth::user();
+        if ($candidate?->hasCompletedProgram() || $candidate?->isDisqualified()) {
+            Notification::make()
+                ->title('Resubmission Not Allowed')
+                ->body('Your account does not have permission to submit assignments.')
+                ->danger()->send();
+            return;
+        }
+
         $existing = Submission::where('task_id', $record->id)
             ->where('student_id', Auth::id())
             ->where('status', SubmissionTypes::PENDING_REVIEW->value)
