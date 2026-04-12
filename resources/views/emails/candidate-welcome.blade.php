@@ -53,6 +53,11 @@
         </div>
 
         <div class="btn-wrap">
+            <p>Join the WhatsApp Group by click the link below:</p>
+            <a href="https://chat.whatsapp.com/DWK3wH4cBmn6bShWR4iadK?mode=gi_t" class="btn" style="color: #ffffff">https://chat.whatsapp.com/DWK3wH4cBmn6bShWR4iadK?mode=gi_t</a>
+        </div>
+
+        <div class="btn-wrap">
             <a href="{{ $loginUrl }}" class="btn" style="color: #ffffff">Log In to Your Portal →</a>
         </div>
 
