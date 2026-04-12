@@ -166,7 +166,7 @@ class TrainingProgramResource extends Resource
                     ->visibility('private')
                     ->circular()
                     ->size(40)
-                    ->defaultImageUrl('/images/default-program.png'),
+                    ->defaultImageUrl('/images/logo.png'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()

@@ -3,8 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Resources\ChangePasswordResource;
-use App\Filament\Student\Widgets\RecentSubmissionsWidget;
-use App\Filament\Widgets\ChurchAnalyticsChart;
+use App\Filament\Widgets\AnnouncementsWidget;
 use App\Filament\Widgets\ChurchStatsWidget;
 use App\Filament\Widgets\ReviewerPerformanceWidget;
 use App\Filament\Widgets\StudentDistributionBarChart;
@@ -16,6 +15,8 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\UserMenuItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -27,7 +28,6 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use Filament\Navigation\UserMenuItem;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -38,19 +38,26 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->colors([
-                'primary' => Color::Amber,
-            ])
-            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+            ->colors(['primary' => Color::Amber])
+            ->brandName('MG Portfolio — Admin')
+            ->favicon(asset('favicon.ico'))
+
+            ->discoverResources(
+                in: app_path('Filament/Resources'),
+                for: 'App\\Filament\\Resources'
+            )
+            ->discoverPages(
+                in: app_path('Filament/Pages'),
+                for: 'App\\Filament\\Pages'
+            )
             ->pages([
                 Pages\Dashboard::class,
             ])
-//            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
+                // Announcements shown first — always visible when relevant
+                AnnouncementsWidget::class,
                 Widgets\AccountWidget::class,
                 ChurchStatsWidget::class,
-//                ChurchAnalyticsChart::class,
                 StudentDistributionChart::class,
                 StudentDistributionBarChart::class,
                 SubmissionAdminWidget::class,
@@ -72,29 +79,18 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
                 EnsureIsAdmin::class,
             ])
+            ->navigationGroups([
+                NavigationGroup::make('Academic Management')->collapsible(),
+                NavigationGroup::make('User Management')->collapsible(),
+                NavigationGroup::make('Communications')->collapsible(),
+                NavigationGroup::make('System Configuration')->collapsible(),
+            ])
             ->userMenuItems([
-//                'profile' => UserMenuItem::make()
-//                    ->label('Edit Profile')
-//                    ->url(fn () => route('filament.admin.pages.edit-profile'))
-//                    ->icon('heroicon-o-user-circle'),
-
                 'change-password' => UserMenuItem::make()
                     ->label('Change Password')
                     ->url(fn () => ChangePasswordResource::getUrl())
                     ->icon('heroicon-o-key')
                     ->sort(10),
-
-                // Add separator before logout
-//                'separator' => UserMenuItem::make()
-//                    ->label('')
-//                    ->url('')
-//                    ->sort(90),
-//
-//                'logout' => UserMenuItem::make()
-//                    ->label('Sign Out')
-//                    ->url(fn () => route('filament.admin.auth.logout'))
-//                    ->icon('heroicon-o-arrow-right-on-rectangle')
-//                    ->sort(100),
             ])
             ->profile(isSimple: false);
     }

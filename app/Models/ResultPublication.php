@@ -10,18 +10,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class ResultPublication extends Model
 {
     use HasFactory, SoftDeletes;
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<string>
-     */
+
     protected $guarded = ['id'];
 
-    /**
-     * The attributes that should be cast to native types.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
@@ -30,24 +21,53 @@ class ResultPublication extends Model
         ];
     }
 
-    /**
-     * Get the training program that owns the result publication.
-     *
-     * @return BelongsTo
-     */
+    // ── Relationships ──────────────────────────────────────────────────────────
+
     public function task(): BelongsTo
     {
         return $this->belongsTo(Task::class);
     }
 
-    /**
-     * Get the student that owns the result publication.
-     *
-     * @return BelongsTo
-     */
     public function publisher(): BelongsTo
     {
         return $this->belongsTo(User::class, 'published_by');
     }
 
+    // ── Scopes ─────────────────────────────────────────────────────────────────
+
+    public function scopePublished($query)
+    {
+        return $query->where('is_published', true);
+    }
+
+    public function scopeUnpublished($query)
+    {
+        return $query->where('is_published', false);
+    }
+
+    // ── Actions ────────────────────────────────────────────────────────────────
+
+    /**
+     * Publish this result, recording who published it and when.
+     */
+    public function publish(User $admin): void
+    {
+        $this->update([
+            'is_published' => true,
+            'published_at' => now(),
+            'published_by' => $admin->id,
+        ]);
+    }
+
+    /**
+     * Unpublish this result, clearing the publication metadata.
+     */
+    public function unpublish(): void
+    {
+        $this->update([
+            'is_published' => false,
+            'published_at' => null,
+            'published_by' => null,
+        ]);
+    }
 }

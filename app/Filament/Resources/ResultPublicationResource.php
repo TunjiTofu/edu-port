@@ -5,207 +5,120 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ResultPublicationResource\Pages;
 use App\Models\ResultPublication;
 use App\Models\Task;
-use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
-use Filament\Forms\Components\Actions\Action;
-use Filament\Support\Enums\ActionSize;
-use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 
 class ResultPublicationResource extends Resource
 {
-    protected static ?string $model = ResultPublication::class;
-
-    protected static ?string $navigationIcon = 'heroicon-o-document-check';
-
+    protected static ?string $model           = ResultPublication::class;
+    protected static ?string $navigationIcon  = 'heroicon-o-document-check';
     protected static ?string $navigationLabel = 'Result Publications';
-
-    protected static ?string $modelLabel = 'Result Publication';
-
+    protected static ?string $modelLabel      = 'Result Publication';
     protected static ?string $pluralModelLabel = 'Result Publications';
-
     protected static ?string $navigationGroup = 'Academic Management';
-
-    protected static ?int $navigationSort = 4;
+    protected static ?int    $navigationSort  = 5;
 
     public static function canViewAny(): bool
     {
         return Auth::user()?->isAdmin();
     }
 
+    // ── Form ──────────────────────────────────────────────────────────────────
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Result Publication Details')
+                Forms\Components\Section::make('Result Publication')
                     ->schema([
                         Forms\Components\Select::make('task_id')
                             ->label('Task')
                             ->relationship('task', 'title')
-                            ->searchable()
-                            ->preload()
-                            ->required()
-//                            ->createOptionForm([
-//                                Forms\Components\TextInput::make('title')
-//                                    ->required()
-//                                    ->maxLength(255),
-//                                Forms\Components\Textarea::make('description')
-//                                    ->maxLength(65535)
-//                                    ->columnSpanFull(),
-//                            ])
-                            ->helperText('Select the task for which you want to create a result publication.')
+                            ->searchable()->preload()->required()
                             ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                // Check if a result publication already exists for this task
+                            ->afterStateUpdated(function ($state) {
                                 if ($state) {
-                                    $existingPublication = ResultPublication::where('task_id', $state)->first();
-                                    if ($existingPublication) {
+                                    $exists = ResultPublication::where('task_id', $state)->exists();
+                                    if ($exists) {
                                         Notification::make()
-                                            ->title('Warning')
+                                            ->title('Already Published')
                                             ->body('A result publication already exists for this task.')
-                                            ->warning()
-                                            ->send();
+                                            ->warning()->send();
                                     }
                                 }
-                            }),
+                            })
+                            ->helperText('Each task can only have one result publication.'),
 
                         Forms\Components\Toggle::make('is_published')
-                            ->label('Publish Immediately')
-                            ->helperText('Toggle this to publish the result immediately upon creation.')
+                            ->label('Published')
                             ->default(false)
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state) {
-                                    $set('published_at', now());
-                                    $set('published_by', auth()->id());
-                                } else {
-                                    $set('published_at', null);
-                                    $set('published_by', null);
-                                }
-                            }),
-
-                        Forms\Components\Hidden::make('published_at')
-                            ->default(fn (Forms\Get $get) => $get('is_published') ? now() : null),
-
-                        Forms\Components\Hidden::make('published_by')
-                            ->default(fn (Forms\Get $get) => $get('is_published') ? auth()->id() : null),
+                            ->helperText('When on, candidates can see their results for this task.'),
                     ])
-                    ->columnSpan(2),
-
-                Forms\Components\Section::make('Additional Information')
-                    ->schema([
-                        Forms\Components\Placeholder::make('task_info')
-                            ->label('Task Information')
-                            ->content(function (Forms\Get $get) {
-                                if (!$get('task_id')) {
-                                    return 'Select a task to view its details.';
-                                }
-
-                                $task = Task::find($get('task_id'));
-                                if (!$task) {
-                                    return 'Task not found.';
-                                }
-
-                                return "Title: {$task->title}\nDescription: " . str($task->description ?? 'No description')->limit(100);
-                            })
-                            ->visible(fn (Forms\Get $get) => $get('task_id')),
-
-                        Forms\Components\Placeholder::make('publication_status')
-                            ->label('Publication Status')
-                            ->content(function (Forms\Get $get) {
-                                if ($get('is_published')) {
-                                    return '✅ This result will be published and visible to students.';
-                                } else {
-                                    return '⏳ This result will be saved as draft and not visible to students.';
-                                }
-                            }),
-                    ])
-                    ->columnSpan(1),
-            ])
-            ->columns(3);
+                    ->columns(2),
+            ]);
     }
+
+    // ── Table ─────────────────────────────────────────────────────────────────
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
+                    ->label('Program')
+                    ->searchable()->sortable()->badge()->color('info'),
+
+                Tables\Columns\TextColumn::make('task.section.name')
+                    ->label('Section')
+                    ->searchable()->sortable()->toggleable(),
+
                 Tables\Columns\TextColumn::make('task.title')
                     ->label('Task')
-                    ->searchable()
-                    ->sortable()
-                    ->limit(50)
-                    ->tooltip(function (Tables\Columns\TextColumn $column): ?string {
-                        $state = $column->getState();
-                        if (strlen($state) <= 50) {
-                            return null;
-                        }
-                        return $state;
-                    }),
+                    ->searchable()->sortable()->weight('bold'),
 
                 Tables\Columns\IconColumn::make('is_published')
-                    ->label('Status')
+                    ->label('Published')
                     ->boolean()
-                    ->trueIcon('heroicon-o-check-circle')
-                    ->falseIcon('heroicon-o-x-circle')
-                    ->trueColor('success')
-                    ->falseColor('danger')
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('published_at')
-                    ->label('Published Date')
-                    ->dateTime('M j, Y g:i A')
-                    ->sortable()
-                    ->placeholder('Not published')
-                    ->color(fn ($state) => $state ? 'success' : 'gray'),
+                    ->trueIcon('heroicon-o-eye')
+                    ->falseIcon('heroicon-o-eye-slash')
+                    ->trueColor('success')->falseColor('gray'),
 
                 Tables\Columns\TextColumn::make('publisher.name')
                     ->label('Published By')
-                    ->searchable()
-                    ->sortable()
-                    ->placeholder('Not assigned')
-                    ->badge()
-                    ->color('primary'),
+                    ->placeholder('—')->toggleable(),
+
+                Tables\Columns\TextColumn::make('published_at')
+                    ->label('Published At')
+                    ->dateTime('M j, Y g:i A')
+                    ->sortable()->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->label('Created')
-                    ->dateTime('M j, Y')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->label('Updated')
-                    ->dateTime('M j, Y')
-                    ->sortable()
+                    ->dateTime()->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                TernaryFilter::make('is_published')
-                    ->label('Publication Status')
-                    ->placeholder('All publications')
-                    ->trueLabel('Published only')
-                    ->falseLabel('Unpublished only'),
-
-                SelectFilter::make('published_by')
-                    ->label('Published By')
-                    ->relationship('publisher', 'name')
-                    ->searchable()
-                    ->preload(),
-
-                SelectFilter::make('task_id')
-                    ->label('Task')
-                    ->relationship('task', 'title')
-                    ->searchable()
-                    ->preload(),
+                TernaryFilter::make('is_published')->label('Published Status'),
+                SelectFilter::make('training_program')
+                    ->label('Program')
+                    ->options(fn () => \App\Models\TrainingProgram::pluck('name', 'id'))
+                    ->query(fn (Builder $query, $data) =>
+                    $data['value']
+                        ? $query->whereHas('task.section.trainingProgram',
+                        fn ($q) => $q->where('id', $data['value']))
+                        : $query
+                    ),
             ])
             ->actions([
+                // Quick publish/unpublish toggle directly from the table
                 Tables\Actions\Action::make('toggle_publish')
                     ->label(fn (ResultPublication $record) =>
                     $record->is_published ? 'Unpublish' : 'Publish'
@@ -217,113 +130,60 @@ class ResultPublicationResource extends Resource
                     $record->is_published ? 'warning' : 'success'
                     )
                     ->requiresConfirmation()
-                    ->modalHeading(fn (ResultPublication $record) =>
-                    $record->is_published ? 'Unpublish Result' : 'Publish Result'
-                    )
-                    ->modalDescription(fn (ResultPublication $record) =>
-                    $record->is_published
-                        ? 'Are you sure you want to unpublish this result? Students will no longer be able to view it.'
-                        : 'Are you sure you want to publish this result? Students will be able to view it immediately.'
-                    )
                     ->action(function (ResultPublication $record) {
                         if ($record->is_published) {
-                            $record->update([
-                                'is_published' => false,
-                                'published_at' => null,
-                                'published_by' => null,
-                            ]);
-
-                            Notification::make()
-                                ->title('Result unpublished successfully')
-                                ->success()
-                                ->send();
+                            $record->unpublish();
+                            Notification::make()->title('Results unpublished.')->warning()->send();
                         } else {
-                            $record->update([
-                                'is_published' => true,
-                                'published_at' => now(),
-                                'published_by' => auth()->id(),
-                            ]);
-
-                            Notification::make()
-                                ->title('Result published successfully')
-                                ->success()
-                                ->send();
+                            $record->publish(Auth::user());
+                            Notification::make()->title('Results published — candidates can now see their scores.')->success()->send();
                         }
                     }),
+
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\BulkAction::make('publish_selected')
+                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\BulkAction::make('publish_all')
                         ->label('Publish Selected')
-                        ->icon('heroicon-o-eye')
-                        ->color('success')
+                        ->icon('heroicon-o-eye')->color('success')
                         ->requiresConfirmation()
-                        ->modalHeading('Publish Selected Results')
-                        ->modalDescription('Are you sure you want to publish the selected results? Students will be able to view them immediately.')
                         ->action(function ($records) {
-                            $records->each(function ($record) {
-                                $record->update([
-                                    'is_published' => true,
-                                    'published_at' => now(),
-                                    'published_by' => auth()->id(),
-                                ]);
-                            });
-
-                            Notification::make()
-                                ->title('Selected results published successfully')
-                                ->success()
-                                ->send();
+                            $records->each->publish(Auth::user());
+                            Notification::make()->title('Selected results published.')->success()->send();
                         }),
-
-                    Tables\Actions\BulkAction::make('unpublish_selected')
+                    Tables\Actions\BulkAction::make('unpublish_all')
                         ->label('Unpublish Selected')
-                        ->icon('heroicon-o-eye-slash')
-                        ->color('warning')
+                        ->icon('heroicon-o-eye-slash')->color('warning')
                         ->requiresConfirmation()
-                        ->modalHeading('Unpublish Selected Results')
-                        ->modalDescription('Are you sure you want to unpublish the selected results? Students will no longer be able to view them.')
                         ->action(function ($records) {
-                            $records->each(function ($record) {
-                                $record->update([
-                                    'is_published' => false,
-                                    'published_at' => null,
-                                    'published_by' => null,
-                                ]);
-                            });
-
-                            Notification::make()
-                                ->title('Selected results unpublished successfully')
-                                ->success()
-                                ->send();
+                            $records->each->unpublish();
+                            Notification::make()->title('Selected results unpublished.')->warning()->send();
                         }),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+    public static function getRelations(): array { return []; }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListResultPublications::route('/'),
+            'index'  => Pages\ListResultPublications::route('/'),
             'create' => Pages\CreateResultPublication::route('/create'),
-            'edit' => Pages\EditResultPublication::route('/{record}/edit'),
+//            'view'   => Pages\ViewResultPublication::route('/{record}'),
+            'edit'   => Pages\EditResultPublication::route('/{record}/edit'),
         ];
     }
 
-    public static function getNavigationBadge(): ?string
+    public static function getEloquentQuery(): Builder
     {
-        return static::getModel()::where('is_published', false)->count() ?: null;
-    }
-
-    public static function getNavigationBadgeColor(): string|array|null
-    {
-        return static::getModel()::where('is_published', false)->count() > 0 ? 'warning' : null;
+        return parent::getEloquentQuery()
+            ->with(['task.section.trainingProgram', 'publisher'])
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 }

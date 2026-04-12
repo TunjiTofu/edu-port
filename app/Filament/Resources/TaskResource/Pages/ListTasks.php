@@ -18,12 +18,14 @@ class ListTasks extends ListRecords
         ];
     }
 
+    // Override to add section-level ordering on the index page only.
+    // This keeps tasks grouped by program and ordered naturally.
     protected function getTableQuery(): Builder
     {
         return static::getResource()::getEloquentQuery()
             ->join('sections', 'tasks.section_id', '=', 'sections.id')
-            ->select('tasks.*', 'sections.order_index as section_order_index')
-            ->orderBy('sections.order_index', 'asc')
-            ->orderBy('tasks.order_index', 'asc');
+            ->select('tasks.*', 'sections.order_index as section_order')
+            ->orderBy('section_order')
+            ->orderBy('tasks.order_index');
     }
 }
