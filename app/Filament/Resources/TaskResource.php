@@ -5,8 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TaskResource\Pages;
 use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
-use App\Models\Section;
-use App\Models\Rubric;
+use App\Models\TrainingProgram;
 use Filament\Forms;
 use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Form;
@@ -22,15 +21,17 @@ use Illuminate\Support\Facades\Auth;
 
 class TaskResource extends Resource
 {
-    protected static ?string $model = Task::class;
+    protected static ?string $model          = Task::class;
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationGroup = 'Academic Management';
-    protected static ?int $navigationSort = 3;
+    protected static ?int    $navigationSort = 3;
 
     public static function canViewAny(): bool
     {
         return Auth::user()?->isAdmin();
     }
+
+    // ── Form ──────────────────────────────────────────────────────────────────
 
     public static function form(Form $form): Form
     {
@@ -38,238 +39,185 @@ class TaskResource extends Resource
             ->schema([
                 FormSection::make('Task Information')
                     ->schema([
+                        // FIX: was calling ->relationship() twice on the same field
                         Forms\Components\Select::make('section_id')
                             ->label('Section')
-                            ->relationship('section', 'name')
                             ->relationship(
                                 name: 'section',
                                 titleAttribute: 'name',
-                                modifyQueryUsing: fn(Builder $query) => $query->where('is_active', true)->orderBy('order_index')
+                                modifyQueryUsing: fn (Builder $query) =>
+                                $query->where('is_active', true)->orderBy('order_index')
                             )
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->reactive()
+                            ->required()->searchable()->preload()
+                            ->live()
                             ->afterStateUpdated(function ($state, callable $set) {
                                 if ($state) {
-                                    $nextOrder = Task::where('section_id', $state)->max('order_index') + 1;
-                                    $set('order_index', $nextOrder);
+                                    $next = Task::where('section_id', $state)->max('order_index') + 1;
+                                    $set('order_index', $next);
                                 }
                             }),
 
                         Forms\Components\TextInput::make('title')
                             ->label('Task Title')
-                            ->required()
-                            ->maxLength(255),
+                            ->required()->maxLength(255),
 
                         Forms\Components\RichEditor::make('description')
-                            ->required()
-                            ->columnSpanFull()
+                            ->required()->columnSpanFull()
                             ->toolbarButtons([
-                                'bold',
-                                'italic',
-                                'underline',
-                                'strike',
-                                'bulletList',
-                                'orderedList',
-                                'h2',
-                                'h3',
-                                'paragraph',
-                                'link',
-                                'blockquote',
-                                'codeBlock'
+                                'bold', 'italic', 'underline', 'strike',
+                                'bulletList', 'orderedList',
+                                'h2', 'h3', 'paragraph',
+                                'link', 'blockquote', 'codeBlock',
                             ]),
-                    ])->columns(1),
+                    ])
+                    ->columns(2),
 
                 FormSection::make('Task Settings')
                     ->schema([
                         Forms\Components\TextInput::make('order_index')
                             ->label('Task Order')
-                            ->numeric()
-                            ->required()
-                            ->minValue(1)
-                            ->helperText('Order in which this task appears in the section'),
+                            ->numeric()->required()->minValue(1)
+                            ->helperText('Order within the section.'),
 
                         Forms\Components\DatePicker::make('due_date')
-                            ->label('Due Date & Time')
-                            ->required(),
+                            ->label('Due Date')->required(),
 
                         Forms\Components\TextInput::make('max_score')
-                            ->label('Maximum Score for Task')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(10)
-                            ->default(function (?Task $record) {
-                                return $record?->max_score ?? 10;
-                            })
-                            ->helperText('Total maximum score for tasks (max 10)')
-                            ->rules([
-                                'numeric',
-                                'min:0',
-                                'max:10',
-                            ]),
+                            ->label('Maximum Score')
+                            ->numeric()->minValue(0)->maxValue(10)
+                            ->default(10)
+                            ->helperText('Out of 10 maximum.'),
 
                         Forms\Components\Toggle::make('is_active')
-                            ->default(true)
-                            ->label('Active Status'),
-                    ])->columns(3),
+                            ->default(true)->label('Active'),
+                    ])
+                    ->columns(4),
 
                 FormSection::make('Grading Instructions')
                     ->schema([
                         Forms\Components\RichEditor::make('instructions')
-                            ->label('Grading Instruction(s)')
+                            ->label('Instructions for Reviewers')
                             ->columnSpanFull()
                             ->toolbarButtons([
-                                'bold',
-                                'italic',
-                                'underline',
-                                'bulletList',
-                                'orderedList',
-                                'h3',
-                                'paragraph',
-                                'blockquote'
-                            ])
-                            ->helperText('Detailed instructions for reviewers on how to grade this task'),
+                                'bold', 'italic', 'underline',
+                                'bulletList', 'orderedList',
+                                'h3', 'paragraph', 'blockquote',
+                            ]),
                     ]),
-
             ]);
     }
+
+    // ── Table ─────────────────────────────────────────────────────────────────
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('section.name')
-                    ->label('Section')
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
                 Tables\Columns\TextColumn::make('section.trainingProgram.name')
                     ->label('Program')
-                    ->searchable()
-                    ->sortable()
+                    ->searchable()->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('section.name')
+                    ->label('Section')
+                    ->searchable()->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('title')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
+                    ->searchable()->sortable()->weight('bold'),
 
                 Tables\Columns\TextColumn::make('order_index')
-                    ->label('Order')
-                    ->sortable()
-                    ->alignCenter()
-                    ->badge()
-                    ->color('primary'),
+                    ->label('Order')->sortable()
+                    ->alignCenter()->badge()->color('primary'),
 
                 Tables\Columns\TextColumn::make('max_score')
-                    ->label('Max Score')
-                    ->alignCenter(),
+                    ->label('Max Score')->alignCenter(),
 
                 Tables\Columns\TextColumn::make('rubrics_count')
-                    ->label('Rubrics')
-                    ->counts('rubrics')
-                    ->alignCenter()
-                    ->badge()
-                    ->color('secondary'),
-
-                Tables\Columns\TextColumn::make('total_rubric_points')
-                    ->label('Total Points')
-                    ->alignCenter()
-                    ->getStateUsing(fn(Task $record): string => number_format($record->getTotalRubricPoints(), 2))
-                    ->badge()
-                    ->color('info'),
+                    ->label('Rubrics')->counts('rubrics')
+                    ->alignCenter()->badge()->color('gray'),
 
                 Tables\Columns\TextColumn::make('due_date')
-                    ->date()
-                    ->sortable()
-                    ->color(fn($record) => $record->due_date < now() ? 'danger' : 'success'),
+                    ->date()->sortable()
+                    ->color(fn ($record) => $record->due_date?->isPast() ? 'danger' : 'success'),
 
                 Tables\Columns\TextColumn::make('submissions_count')
-                    ->label('Submissions')
-                    ->counts('submissions')
-                    ->alignCenter()
-                    ->badge()
-                    ->color('info'),
+                    ->label('Submissions')->counts('submissions')
+                    ->alignCenter()->badge()->color('info'),
 
-                Tables\Columns\IconColumn::make('is_active')
-                    ->boolean()
-                    ->label('Active'),
+                Tables\Columns\IconColumn::make('is_active')->boolean()->label('Active'),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
+                    ->dateTime()->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\TrashedFilter::make(),
 
                 SelectFilter::make('training_program')
-                    ->label('Training Program')
-                    ->options(function () {
-                        return \App\Models\TrainingProgram::pluck('name', 'id')->toArray();
-                    })
-                    ->query(function (Builder $query, $data) {
-                        if ($data['value']) {
-                            $query->whereHas('section.trainingProgram', function ($q) use ($data) {
-                                $q->where('id', $data['value']);
-                            });
-                        }
-                    }),
+                    ->label('Program')
+                    ->options(fn () => TrainingProgram::pluck('name', 'id'))
+                    ->query(fn (Builder $query, $data) =>
+                    $data['value']
+                        ? $query->whereHas('section.trainingProgram',
+                        fn ($q) => $q->where('id', $data['value']))
+                        : $query
+                    ),
 
                 SelectFilter::make('section')
                     ->relationship('section', 'name')
-                    ->searchable()
-                    ->preload(),
+                    ->searchable()->preload(),
 
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Active Status'),
+                Tables\Filters\TernaryFilter::make('is_active')->label('Status'),
 
                 Tables\Filters\Filter::make('due_date')
                     ->form([
-                        Forms\Components\DatePicker::make('due_from')
-                            ->label('Due Date From'),
-                        Forms\Components\DatePicker::make('due_until')
-                            ->label('Due Date Until'),
+                        Forms\Components\DatePicker::make('due_from')->label('Due From'),
+                        Forms\Components\DatePicker::make('due_until')->label('Due Until'),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['due_from'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('due_date', '>=', $date),
-                            )
-                            ->when(
-                                $data['due_until'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('due_date', '<=', $date),
-                            );
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder =>
+                    $query
+                        ->when($data['due_from'],
+                            fn ($q, $date) => $q->whereDate('due_date', '>=', $date))
+                        ->when($data['due_until'],
+                            fn ($q, $date) => $q->whereDate('due_date', '<=', $date))
+                    ),
 
                 Tables\Filters\Filter::make('has_rubrics')
                     ->label('Has Rubrics')
-                    ->query(fn(Builder $query): Builder => $query->has('rubrics'))
+                    ->query(fn (Builder $q) => $q->has('rubrics'))
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('overdue')
+                    ->label('Overdue Only')
+                    ->query(fn (Builder $q) =>
+                    $q->where('is_active', true)->where('due_date', '<', now())
+                    )
                     ->toggle(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\Action::make('manage_rubrics')
-                    ->label('Manage Rubrics')
+                    ->label('Rubrics')
                     ->icon('heroicon-o-clipboard-document-check')
-                    ->url(fn(Task $record): string => route('filament.admin.resources.rubrics.index', ['tableFilters[task][value]' => $record->id]))
+                    ->color('info')
+                    ->url(fn (Task $record): string =>
+                    route('filament.admin.resources.rubrics.index',
+                        ['tableFilters[task][value]' => $record->id])
+                    )
                     ->openUrlInNewTab(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (Task $record) {
                         if ($record->submissions()->exists()) {
-                            Notification::make()
-                                ->title('Request Denied')
-                                ->body('Cannot delete task with existing submissions. Please remove all submissions before deleting.')
-                                ->danger()
-                                ->persistent()
-                                ->send();
+                            Notification::make()->title('Denied')
+                                ->body('Remove all submissions for this task before deleting.')
+                                ->danger()->persistent()->send();
                             throw new Halt();
                         }
                     }),
+                Tables\Actions\ForceDeleteAction::make(),
+                Tables\Actions\RestoreAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -290,20 +238,18 @@ class TaskResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListTasks::route('/'),
+            'index'  => Pages\ListTasks::route('/'),
             'create' => Pages\CreateTask::route('/create'),
-            'view' => Pages\ViewTask::route('/{record}'),
-            'edit' => Pages\EditTask::route('/{record}/edit'),
+            'view'   => Pages\ViewTask::route('/{record}'),
+            'edit'   => Pages\EditTask::route('/{record}/edit'),
         ];
     }
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['section.trainingProgram', 'rubrics'])
+            ->with(['section.trainingProgram'])
             ->withCount(['submissions', 'rubrics'])
-            ->withoutGlobalScopes([
-                SoftDeletingScope::class,
-            ]);
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 }

@@ -2,71 +2,65 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\RoleTypes;
 use Closure;
+use Filament\Facades\Filament;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Log;
 
 class ForcePasswordChange
 {
     public function handle(Request $request, Closure $next)
     {
-        $user = Auth::user();
-        // Skip if user is not authenticated
-        if (!$user) {
+        $user = Filament::auth()->user();
+
+        if (! $user) {
+            Log::warning('ForcePasswordChange: user not authenticated');
             return $next($request);
         }
 
-        // Skip if user has already changed their password
         if ($user->password_updated_at) {
             return $next($request);
         }
 
-        // Skip if already on password change page to avoid redirect loop
-        if (str_contains($request->path(), '/change-password')) {
-            return $next($request);
-        }
-
-        // Skip for logout requests
-        if (str_contains($request->path(), '/logout')) {
-            return $next($request);
-        }
-
-        // Skip for login pages
-        if (str_contains($request->path(), '/login')) {
-            return $next($request);
-        }
-
-        // Skip for API routes and assets
-        if ($request->is('api/*') || $request->is('_*') || $request->is('assets/*')) {
-            return $next($request);
-        }
-
-        // Determine which panel the user is accessing
-        $panelId = $this->getPanelId($request);
-
-        // Redirect to appropriate change password page based on user role
-
-        return match($user->role->name) {
-            'Student' => redirect('/student/change-password'),
-            'Reviewer' => redirect('/reviewer/change-password'),
-            'Observer' => redirect('/observer/change-password'),
-            default => $next($request)
-        };
-    }
-
-    private function getPanelId(Request $request): ?string
-    {
         $path = $request->path();
 
-        if (str_starts_with($path, 'student/')) {
-            return 'student';
-        } elseif (str_starts_with($path, 'reviewer/')) {
-            return 'reviewer';
-        } elseif (str_starts_with($path, 'observer/')) {
-            return 'observer';
+        $skipPatterns = ['change-password', 'logout', 'login'];
+
+        foreach ($skipPatterns as $pattern) {
+            if (str_contains($path, $pattern)) {
+                return $next($request);
+            }
         }
 
-        return null;
+        if ($request->is('api/*') || $request->is('_*') || $request->is('assets/*') || $request->is('livewire/*')) {
+            return $next($request);
+        }
+
+        $roleName = $user->role?->name;
+
+        $redirectPath = match ($roleName) {
+            RoleTypes::STUDENT->value  => '/student/change-password',
+            RoleTypes::REVIEWER->value => '/reviewer/change-password',
+            RoleTypes::OBSERVER->value => '/observer/change-password',
+            default                    => null,
+        };
+
+        if ($redirectPath) {
+            Log::info('ForcePasswordChange: redirecting user to change default password', [
+                'event'         => 'force_password_change_redirect',
+                'user_id'       => $user->id,
+                'user_email'    => $user->email,
+                'role'          => $roleName,
+                'redirect_to'   => $redirectPath,
+                'attempted_path'=> $path,
+                'ip'            => $request->ip(),
+                'user_agent'    => $request->userAgent(),
+            ]);
+
+            return redirect($redirectPath);
+        }
+
+        return $next($request);
     }
 }

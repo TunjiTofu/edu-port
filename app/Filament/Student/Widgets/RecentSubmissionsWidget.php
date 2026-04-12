@@ -2,18 +2,17 @@
 
 namespace App\Filament\Student\Widgets;
 
+use App\Models\Submission;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
-use App\Models\Submission;
-use Illuminate\Database\Eloquent\Builder;
 
-class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
+class RecentSubmissionsWidget extends BaseWidget
 {
-    protected static ?int $sort = 2;
-    protected int | string | array $columnSpan = 'full';
-    protected static ?string $heading = 'Recent Submissions';
-    protected static ?string $description = 'Your last 5 submissions with status and scores';
+    protected static ?int    $sort        = 2;
+    protected int|string|array $columnSpan = 'full';
+    protected static ?string $heading     = 'Recent Submissions';
+    protected static ?string $description = 'Your latest submissions with status and scores';
 
     public function table(Table $table): Table
     {
@@ -21,9 +20,13 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
             ->query(
                 Submission::query()
                     ->where('student_id', auth()->id())
-                    ->with(['task.section.trainingProgram', 'task.resultPublication','review']) // Add review relationship
+                    ->with([
+                        'task.section.trainingProgram',
+                        'task.resultPublication',
+                        'review:id,submission_id,score,is_completed',
+                    ])
                     ->latest('submitted_at')
-                    ->limit(3)
+                    ->limit(5)
             )
             ->columns([
                 Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
@@ -36,7 +39,7 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                     ->label('Task')
                     ->weight('bold')
                     ->limit(30)
-                    ->tooltip(fn ($record) => $record->task->title),
+                    ->tooltip(fn ($record) => $record->task?->title),
 
                 Tables\Columns\TextColumn::make('submitted_at')
                     ->label('Submitted')
@@ -47,46 +50,34 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                     ->label('Status')
                     ->view('filament.student.widgets.submission-status-compact'),
 
-                // Updated score column to handle your review relationship
-//                Tables\Columns\TextColumn::make('review.score')
-//                    ->label('Score')
-//                    ->formatStateUsing(function ($state, $record) {
-//                        if ($record->task->resultPublication->is_published) {
-//                            return $state ?? 'Not Scored';
-//                        }
-//                        return 'Result Unpublished';
-//                    })
-//                    ->badge()
-//                    ->color(function ($state, $record) {
-//                        $maxScore = $record->task->max_score;
-//                        $score = $record->score;
-//                        $scorePercentage = ($score / $maxScore) * 100;
-//
-//                        if (!$scorePercentage) return 'gray';
-//                        if ($scorePercentage >= 75) return 'success';
-//                        if ($scorePercentage >= 50) return 'warning';
-//                        return 'danger';
-//                    }),
-
-
                 Tables\Columns\TextColumn::make('review.score')
                     ->label('Score')
                     ->formatStateUsing(function ($state, $record) {
-                        // Check if results are published
-                        if ($record->task?->resultPublication?->is_published) {
-                            return $state ?? 'Not Scored'; // Handle null scores
+                        if (! $record->task?->resultPublication?->is_published) {
+                            return 'Result Unpublished';
                         }
-                        return 'Result Unpublished';
+                        return $state !== null ? $state . ' / ' . $record->task->max_score : 'Not Scored';
                     })
                     ->badge()
                     ->color(function ($state, $record) {
-                        $maxScore = $record->task->max_score;
-                        $score = $record->score;
-                        $scorePercentage = ($score / $maxScore) * 100;
-                        if (!$scorePercentage) return 'danger';
-                        if ($scorePercentage >= 75 && $record->task?->resultPublication?->is_published) return 'success';
-                        if ($scorePercentage >= 50 && $record->task?->resultPublication?->is_published) return 'warning';
-                        return 'gray';
+                        if (! $record->task?->resultPublication?->is_published) {
+                            return 'gray';
+                        }
+
+                        $reviewScore = $record->review?->score;
+                        $maxScore    = $record->task?->max_score;
+
+                        if ($reviewScore === null || ! $maxScore || $maxScore <= 0) {
+                            return 'gray';
+                        }
+
+                        $pct = ($reviewScore / $maxScore) * 100;
+
+                        return match (true) {
+                            $pct >= 75 => 'success',
+                            $pct >= 50 => 'warning',
+                            default    => 'danger',
+                        };
                     }),
             ])
             ->actions([
@@ -94,12 +85,10 @@ class RecentSubmissionsWidget extends BaseWidget // Missing extends BaseWidget
                     ->label('View')
                     ->icon('heroicon-o-eye')
                     ->url(fn ($record) => route('filament.student.resources.results.view', $record))
-                    ->visible(function ($record) {
-                        return $record->review &&
-                            $record->review->score !== null &&
-                            $record->task->resultPublication &&
-                            $record->task->resultPublication->is_published;
-                    }),
+                    ->visible(fn ($record) =>
+                        $record->review?->score !== null &&
+                        $record->task?->resultPublication?->is_published
+                    ),
             ])
             ->paginated(false);
     }

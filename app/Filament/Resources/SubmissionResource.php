@@ -5,43 +5,40 @@ namespace App\Filament\Resources;
 use App\Enums\RoleTypes;
 use App\Enums\SubmissionTypes;
 use App\Filament\Resources\SubmissionResource\Pages;
-use App\Filament\Resources\SubmissionResource\RelationManagers;
 use App\Models\Review;
+use App\Models\Role;
 use App\Models\Submission;
 use App\Models\User;
 use App\Services\Utility\Constants;
 use Carbon\Carbon;
 use Filament\Forms;
+use Filament\Forms\Components\Section as FormSection;
 use Filament\Forms\Form;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
-use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
-use Filament\Forms\Components\Section as FormSection;
-use Filament\Forms\Components\TextEntry;
-use Filament\Forms\Components\TextInput;
-use Filament\Infolists\Components\TextEntry as ComponentsTextEntry;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class SubmissionResource extends Resource
 {
-    protected static ?string $model = Submission::class;
+    protected static ?string $model          = Submission::class;
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
     protected static ?string $navigationGroup = 'Review Management';
-    protected static ?int $navigationSort = 1;
+    protected static ?int    $navigationSort = 1;
 
     public static function canViewAny(): bool
     {
         return Auth::user()?->isAdmin();
     }
 
+    // ── Form ──────────────────────────────────────────────────────────────────
 
     public static function form(Form $form): Form
     {
@@ -51,672 +48,245 @@ class SubmissionResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('student_id')
                             ->relationship('student', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->disabled(),
+                            ->searchable()->preload()->disabled(),
 
                         Forms\Components\Select::make('task_id')
                             ->relationship('task', 'title')
-                            ->searchable()
-                            ->preload(),
-                        // ->disabled(),
+                            ->searchable()->preload()->disabled(),
 
-                        Forms\Components\TextInput::make('file_path')
-                            ->label('File Path')
-                            ->disabled()
-                            ->visible(fn($record) => $record?->file_path),
+                        Forms\Components\TextInput::make('file_name')
+                            ->label('File Name')->disabled(),
 
-                        Forms\Components\Textarea::make('text_content')
-                            ->label('Text Submission')
-                            ->rows(5)
-                            ->disabled()
-                            ->visible(fn($record) => $record?->text_content),
-
-                        // For view context (read-only)
-                        Forms\Components\TextInput::make('reviewer_name')
-                            ->label('Assigned Reviewer')
-                            ->formatStateUsing(fn($record) => $record->review->reviewer->name ?? 'No reviewer assigned')
-                            ->disabled()
-                            ->visible(fn($context) => $context === 'view'),
-
-                        // For edit context (select field)
-                        Forms\Components\Select::make('review.reviewer_id')
-                            ->label('Assign Reviewer')
-                            ->relationship(
-                                name: 'review.reviewer',  // Relationship name
-                                titleAttribute: 'name',   // Display attribute
-                                modifyQueryUsing: fn(Builder $query) => $query->where('role_id', Constants::REVIEWER_ID)
-                                    ->where('is_active', true)
-                                    ->where('church_id', '!=', Auth::user()->church_id)
-                                    ->where('district_id', '!=', Auth::user()->district_id)
+                        Forms\Components\TextInput::make('file_size')
+                            ->label('File Size')
+                            ->formatStateUsing(fn ($state) =>
+                            $state ? number_format($state / 1024, 1) . ' KB' : '—'
                             )
-                            ->searchable()
-                            ->preload()
-                            ->nullable()
-                            ->required()
-                            ->visible(fn($context) => $context === 'edit'),
-                    ])->columns(2),
+                            ->disabled(),
+                    ])
+                    ->columns(2),
 
-                FormSection::make('Review Information')
+                FormSection::make('Review & Assignment')
                     ->schema([
-                        // Forms\Components\TextInput::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->disabled()
-                        //     ->formatStateUsing(function ($record) {
-                        //         return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     }),
+                        // Assign reviewer — admin only action
+                        Forms\Components\Select::make('reviewer_id')
+                            ->label('Assign Reviewer')
+                            ->options(fn () =>
+                            User::whereHas('role',
+                                fn ($q) => $q->where('name', RoleTypes::REVIEWER->value)
+                            )
+                                ->where('is_active', true)
+                                ->pluck('name', 'id')
+                            )
+                            ->searchable()->nullable()
+                            ->dehydrated(false) // Virtual — we update review separately
+                            ->helperText('Assigns or reassigns the reviewer for this submission.'),
 
-                        // Forms\Components\Select::make('review.reviewer.name')
-                        //     ->label('Assigned Reviewer')
-                        //     ->relationship(
-                        //         name: 'review.reviewer',
-                        //         titleAttribute: 'name'
-                        //     )
-                        //     // ->formatStateUsing(function ($record) {
-                        //     //     return $record->review->reviewer->name ?? 'No reviewer assigned';
-                        //     // })
-                        //     ->searchable()
-                        //     ->preload(),
-
-
-
-                        // Status field (works for both)
                         Forms\Components\Select::make('status')
                             ->options([
-                                SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
-                                SubmissionTypes::UNDER_REVIEW->value => 'Under Review',
-                                SubmissionTypes::COMPLETED->value => 'Completed',
-                                SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
-                                SubmissionTypes::FLAGGED->value => 'Flagged for Plaigiarism',
+                                SubmissionTypes::PENDING_REVIEW->value  => 'Pending Review',
+                                SubmissionTypes::UNDER_REVIEW->value    => 'Under Review',
+                                SubmissionTypes::COMPLETED->value       => 'Completed',
+                                SubmissionTypes::NEEDS_REVISION->value  => 'Needs Revision',
+                                SubmissionTypes::FLAGGED->value         => 'Flagged for Plagiarism',
                             ])
                             ->required(),
-
-                        Forms\Components\TextInput::make('review.score')
-                            ->label('Score')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(function ($record) {
-                                return $record->task->max_score ?? 10;
-                            })
-                            ->visible(function ($get) {
-                                return in_array($get('status'), ['completed', 'needs_revision']);
-                            })
-                            ->required(function ($get) {
-                                return $get('status') === 'completed';
-                            })
-                            ->formatStateUsing(fn($record) => $record->review->score ?? 'N/A'),
-
-                        Forms\Components\Textarea::make('review.comments')
-                            ->label('Reviewer Comments')
-                            ->rows(4)
-                            ->visible(function ($get) {
-                                return in_array($get('status'), ['under_review', 'completed', 'needs_revision', 'flagged']);
-                            })
-                            ->required(function ($get) {
-                                return $get('status') === 'needs_revision';
-                            })
-                            ->formatStateUsing(fn($record) => $record->review->comments ?? 'N/A')
-                            ->columnSpanFull(),
-                    ])->columns(2),
-
-                // FormSection::make('Plagiarism Detection')
-                //     ->schema([
-                //         Forms\Components\TextInput::make('similarity_score')
-                //             ->label('Similarity Score (%)')
-                //             ->numeric()
-                //             ->disabled()
-                //             ->suffix('%'),
-
-                //         Forms\Components\Toggle::make('is_flagged')
-                //             ->label('Flagged for Plagiarism')
-                //             ->disabled(),
-
-                //         Forms\Components\Textarea::make('similarity_details')
-                //             ->label('Similarity Details')
-                //             ->rows(3)
-                //             ->disabled()
-                //             ->helperText('Details about similar submissions found'),
-                //     ])->columns(2),
-
-                FormSection::make('Timestamps')
-                    ->schema([
-                        Forms\Components\DateTimePicker::make('submitted_at')
-                            ->label('Submitted At')
-                            ->disabled(),
-
-                        Forms\Components\DateTimePicker::make('reviewed_at')
-                            ->label('Reviewed At')
-                            ->formatStateUsing(fn($record) => $record->review?->reviewed_at?->format('Y-m-d H:i:s') ?? 'N/A')
-                            ->disabled(),
-                    ])->columns(2),
-
-                FormSection::make('Admin Override')
-                    ->schema([
-                        Forms\Components\Toggle::make('review.admin_override')
-                            ->label('Admin Override?')
-                            ->reactive()
-                            ->formatStateUsing(fn($record) => $record->review?->admin_override ?? false)
-                            ->helperText('Override the reviewer\'s decision')
-                            ->disabled(),
-
-                        Forms\Components\Select::make('review.overridden_by')
-                            ->label('Overridden By')
-                            ->options(User::where('role_id', Constants::ADMIN_ID)->pluck('name', 'id')) // Only admins
-                            ->default(Auth::user()->id)
-                            ->searchable()
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->overridden_by ?? Auth::user()->id)
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled(),
-
-                        Forms\Components\DateTimePicker::make('review.overridden_at')
-                            ->label('Override Date')
-                            // ->default(now())
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->overridden_at ? Carbon::parse($record->review->overridden_at)->format('Y-m-d H:i:s') : now()?->format('Y-m-d H:i:s'))
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled(),
-
-                        Forms\Components\Textarea::make('review.override_reason')
-                            ->label('Override Reason')
-                            ->rows(3)
-                            ->required(fn($get) => $get('review.admin_override'))
-                            ->formatStateUsing(fn($record) => $record->review?->override_reason ?? '')
-                            ->visible(fn($get) => $get('review.admin_override'))
-                            ->disabled()
-                            ->helperText('Explain why this override is necessary')
-                            ->columnSpanFull(),
-
                     ])
-                    ->collapsible()
-                    ->columns(3)
+                    ->columns(2),
             ]);
     }
+
+    // ── Infolist ──────────────────────────────────────────────────────────────
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Submission')
+                    ->schema([
+                        Infolists\Components\Grid::make(['default' => 2, 'sm' => 4])
+                            ->schema([
+                                Infolists\Components\TextEntry::make('student.name')
+                                    ->label('Candidate')->weight('bold'),
+                                Infolists\Components\TextEntry::make('task.title')
+                                    ->label('Task'),
+                                Infolists\Components\TextEntry::make('submitted_at')
+                                    ->label('Submitted')->dateTime('M j, Y g:i A'),
+                                Infolists\Components\TextEntry::make('status')
+                                    ->badge()
+                                    ->color(fn ($state) => match ($state) {
+                                        SubmissionTypes::COMPLETED->value      => 'success',
+                                        SubmissionTypes::PENDING_REVIEW->value => 'info',
+                                        SubmissionTypes::UNDER_REVIEW->value   => 'warning',
+                                        SubmissionTypes::NEEDS_REVISION->value => 'danger',
+                                        SubmissionTypes::FLAGGED->value        => 'danger',
+                                        default                                => 'gray',
+                                    })
+                                    ->formatStateUsing(fn ($state) => str_replace('_', ' ', ucfirst($state))),
+                            ]),
+
+                        Infolists\Components\Grid::make(['default' => 2, 'sm' => 4])
+                            ->schema([
+                                Infolists\Components\TextEntry::make('file_name')->label('File'),
+                                Infolists\Components\TextEntry::make('file_type')->label('Type'),
+                                Infolists\Components\TextEntry::make('file_size')
+                                    ->label('Size')
+                                    ->formatStateUsing(fn ($state) =>
+                                    $state ? number_format($state / 1024, 1) . ' KB' : '—'
+                                    ),
+                            ]),
+
+                        Infolists\Components\TextEntry::make('student_notes')
+                            ->label('Candidate Notes')->prose()->columnSpanFull()
+                            ->visible(fn ($record) => ! empty($record->student_notes)),
+                    ]),
+
+                Infolists\Components\Section::make('Review')
+                    ->schema([
+                        Infolists\Components\Grid::make(['default' => 2, 'sm' => 4])
+                            ->schema([
+                                Infolists\Components\TextEntry::make('review.reviewer.name')
+                                    ->label('Reviewer')
+                                    ->placeholder('Not assigned'),
+                                Infolists\Components\TextEntry::make('review.score')
+                                    ->label('Score')
+                                    ->badge()->color('success')
+                                    ->formatStateUsing(fn ($state, $record) =>
+                                    $state !== null ? $state . ' / ' . $record->task?->max_score : 'Not graded'
+                                    ),
+                                Infolists\Components\TextEntry::make('review.reviewed_at')
+                                    ->label('Reviewed At')
+                                    ->dateTime('M j, Y g:i A')
+                                    ->placeholder('Not yet reviewed'),
+                                Infolists\Components\IconEntry::make('review.is_completed')
+                                    ->label('Completed')
+                                    ->boolean(),
+                            ]),
+                        Infolists\Components\TextEntry::make('review.comments')
+                            ->label('Reviewer Comments')->prose()->columnSpanFull()
+                            ->visible(fn ($record) => ! empty($record->review?->comments)),
+                    ]),
+            ]);
+    }
+
+    // ── Table ─────────────────────────────────────────────────────────────────
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('student.name')
-                    ->label('Student')
-                    ->searchable()
-                    ->sortable()
-                    ->weight(FontWeight::Medium),
-
-                Tables\Columns\TextColumn::make('student.phone')
-                    ->label('Phone')
-                    ->searchable()
-                    ->toggleable(),
+                    ->label('Candidate')
+                    ->searchable()->sortable()->weight('bold'),
 
                 Tables\Columns\TextColumn::make('task.title')
                     ->label('Task')
-                    ->searchable()
-                    ->sortable()
-                    ->limit(30),
+                    ->searchable()->sortable()->limit(30)
+                    ->tooltip(fn ($record) => $record->task?->title),
 
-                Tables\Columns\TextColumn::make('task.section.name')
-                    ->label('Section')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\TextColumn::make('status')
-                    ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        SubmissionTypes::PENDING_REVIEW->value => 'primary',
-                        SubmissionTypes::UNDER_REVIEW->value => 'info',
-                        SubmissionTypes::COMPLETED->value => 'success',
-                        SubmissionTypes::NEEDS_REVISION->value => 'secondary',
-                        SubmissionTypes::FLAGGED->value => 'danger',
-                        default => 'gray',
-                    }),
-                Tables\Columns\TextColumn::make('review.score')
-                    ->label('Score')
-                    ->alignCenter()
-                    ->badge()
-                    ->color(function ($record) {
-                        $score = $record->review->score ?? null;
-                        $maxScore = $record->task->max_score ?? null;
-
-                        if (null === $score) return 'secondary';
-                        if (null === $maxScore) return 'gray';
-
-                        $percentage = ($score / $maxScore) * 100;
-
-                        return match (true) {
-                            $percentage >= 75 => 'success',
-                            $percentage >= 50 => 'warning',
-                            default => 'danger',
-                        };
-                    })
-                    ->formatStateUsing(function ($record) {
-                        $score = $record->review->score ?? null;
-                        $maxScore = $record->task->max_score ?? null;
-
-                        return match (true) {
-                            null === $score => 'N/A',
-                            null === $maxScore => (string) $score,
-                            default => "{$score}/{$maxScore}",
-                        };
-                    })
-                    ->tooltip(function ($record) {
-                        $score = $record->review->score ?? null;
-                        $maxScore = $record->task->max_score ?? null;
-
-                        return match (true) {
-                            null === $score => 'Not yet graded',
-                            null === $maxScore => 'Raw score',
-                            default => round(($score / $maxScore) * 100) . '% of maximum score',
-                        };
-                    }),
-                Tables\Columns\TextColumn::make('review.reviewer.name')
-                    ->label('Reviewer')
-                    ->searchable()
-                    ->toggleable(),
+                Tables\Columns\TextColumn::make('task.section.trainingProgram.name')
+                    ->label('Program')
+                    ->searchable()->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('submitted_at')
                     ->label('Submitted')
-                    ->dateTime()
-                    ->sortable()
-                    ->since()
+                    ->dateTime('M j, Y')->sortable(),
+
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn ($state) => match ($state) {
+                        SubmissionTypes::COMPLETED->value      => 'success',
+                        SubmissionTypes::PENDING_REVIEW->value => 'info',
+                        SubmissionTypes::UNDER_REVIEW->value   => 'warning',
+                        SubmissionTypes::NEEDS_REVISION->value => 'danger',
+                        SubmissionTypes::FLAGGED->value        => 'danger',
+                        default                                => 'gray',
+                    })
+                    ->formatStateUsing(fn ($state) => str_replace('_', ' ', ucfirst($state))),
+
+                Tables\Columns\TextColumn::make('review.reviewer.name')
+                    ->label('Reviewer')
+                    ->placeholder('Unassigned')
+                    ->searchable()->toggleable(),
+
+                Tables\Columns\TextColumn::make('review.score')
+                    ->label('Score')
+                    ->badge()->color('success')
+                    ->formatStateUsing(fn ($state) => $state !== null ? $state : '—')
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('review.reviewed_at')
-                    ->label('Reviewed')
-                    ->dateTime()
-                    ->since()
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-
             ])
-
+            ->defaultSort('submitted_at', 'desc')
             ->filters([
                 Tables\Filters\TrashedFilter::make(),
+
                 SelectFilter::make('status')
                     ->options([
-                        SubmissionTypes::PENDING_REVIEW->value => 'Pending Review',
-                        SubmissionTypes::UNDER_REVIEW->value => 'Under Review',
-                        SubmissionTypes::COMPLETED->value => 'Completed',
-                        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
-                        SubmissionTypes::FLAGGED->value => 'Flagged for Review',
+                        SubmissionTypes::PENDING_REVIEW->value  => 'Pending Review',
+                        SubmissionTypes::UNDER_REVIEW->value    => 'Under Review',
+                        SubmissionTypes::COMPLETED->value       => 'Completed',
+                        SubmissionTypes::NEEDS_REVISION->value  => 'Needs Revision',
+                        SubmissionTypes::FLAGGED->value         => 'Flagged',
                     ]),
 
-                SelectFilter::make('task')
-                    ->relationship('task', 'title')
-                    ->searchable()
-                    ->preload(),
+                SelectFilter::make('training_program')
+                    ->label('Program')
+                    ->options(fn () => \App\Models\TrainingProgram::pluck('name', 'id'))
+                    ->query(fn (Builder $query, $data) =>
+                    $data['value']
+                        ? $query->whereHas('task.section.trainingProgram',
+                        fn ($q) => $q->where('id', $data['value']))
+                        : $query
+                    ),
 
-                SelectFilter::make('section')
-                    ->label('Section')
-                    ->options(function () {
-                        return \App\Models\Section::pluck('name', 'id')->toArray();
-                    })
-                    ->query(function (Builder $query, $data) {
-                        if ($data['value']) {
-                            $query->whereHas('task.section', function ($q) use ($data) {
-                                $q->where('id', $data['value']);
-                            });
-                        }
-                    }),
-
-                SelectFilter::make('reviewer_id')
-                    ->label('Reviewer')
-                    ->relationship(
-                        name: 'review.reviewer',
-                        titleAttribute: 'name',
-                        modifyQueryUsing: fn(Builder $query) => $query->where('role_id', 2)
+                Tables\Filters\Filter::make('unassigned')
+                    ->label('Unassigned')
+                    ->query(fn (Builder $q) =>
+                    $q->whereDoesntHave('review', fn ($r) => $r->whereNotNull('reviewer_id'))
                     )
-                    ->searchable()
-                    ->preload(),
+                    ->toggle(),
 
-                // Tables\Filters\Filter::make('similarity_score')
-                //     ->form([
-                //         Forms\Components\TextInput::make('min_similarity')
-                //             ->label('Minimum Similarity %')
-                //             ->numeric()
-                //             ->minValue(0)
-                //             ->maxValue(100),
-                //         Forms\Components\TextInput::make('max_similarity')
-                //             ->label('Maximum Similarity %')
-                //             ->numeric()
-                //             ->minValue(0)
-                //             ->maxValue(100),
-                //     ])
-                //     ->query(function (Builder $query, array $data): Builder {
-                //         return $query
-                //             ->when(
-                //                 $data['min_similarity'],
-                //                 fn(Builder $query, $value): Builder => $query->where('similarity_score', '>=', $value),
-                //             )
-                //             ->when(
-                //                 $data['max_similarity'],
-                //                 fn(Builder $query, $value): Builder => $query->where('similarity_score', '<=', $value),
-                //             );
-                //     }),
-
-                Tables\Filters\Filter::make('submitted_date')
-                    ->form([
-                        Forms\Components\DatePicker::make('submitted_from')
-                            ->label('Submitted From'),
-                        Forms\Components\DatePicker::make('submitted_until')
-                            ->label('Submitted Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['submitted_from'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('submitted_at', '>=', $date),
-                            )
-                            ->when(
-                                $data['submitted_until'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('submitted_at', '<=', $date),
-                            );
-                    }),
+                Tables\Filters\Filter::make('overdue_review')
+                    ->label('Awaiting Review >7 days')
+                    ->query(fn (Builder $q) =>
+                    $q->where('status', SubmissionTypes::PENDING_REVIEW->value)
+                        ->where('submitted_at', '<', now()->subDays(7))
+                    )
+                    ->toggle(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
-                Tables\Actions\Action::make('download')
-                    ->label('Download')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('primary')
-                    ->url(function (Submission $record) {
-                        return $record ? static::getDownloadUrl($record) : null;
-                    })
-//                    ->openUrlInNewTab(),
-//                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
-                    ->openUrlInNewTab(),
-                // ->visible(fn(Submission $record) => $record->file_path. '/' . $record->file_name && file_exists(public_path($record->file_path . '/' . $record->file_name))),
-
-                Tables\Actions\Action::make('assign_reviewer')
-                    ->label('Assign Reviewer')
-                    ->icon('heroicon-o-user-plus')
-                    ->color('warning')
-                    ->form([
-                        Forms\Components\Select::make('review.reviewer_id')
-                            ->label('Select Reviewer')
-                            ->options(function (Submission $record) {
-                                return \App\Models\User::where('role_id', Constants::REVIEWER_ID)
-                                    ->where('is_active', true)
-                                    ->where('church_id', '!=', $record->student->church_id)
-                                    ->where('district_id', '!=', $record->student->district_id)
-                                    ->pluck('name', 'id');
-                            })
-                            ->required()
-                            ->searchable()
-                            ->preload(),
-                    ])
-                    ->action(function (Submission $record, array $data) {
-
-                        // Update the related Review
-                        $record->review()->updateOrCreate(
-                            ['submission_id' => $record->id],
-                            ['reviewer_id' => $data['review']['reviewer_id']]
-                        );
-
-                        // Update the Submission status
-                        $record->update([
-                            'status' => SubmissionTypes::UNDER_REVIEW->value,
-                        ]);
-
-                        Notification::make()
-                            ->title('Reviewer assigned successfully')
-                            ->success()
-                            ->send();
-                    })
-//                    ->visible(function (Submission $record) {
-//                        return !$record->reviewer_id &&
-//                            $record->status === SubmissionTypes::PENDING_REVIEW->value;
-//                    }),
-                    ->visible(function (Submission $record) {
-                        return $record->status !== SubmissionTypes::COMPLETED->value;
-                    }),
-
-                Tables\Actions\Action::make('override_score')
-                    ->label('Override Score')
-                    ->icon('heroicon-o-pencil-square')
-                    ->color('danger')
-                    ->form([
-                        Forms\Components\TextInput::make('score')
-                            ->label('New Score')
-                            ->numeric()
-                            ->required()
-                            ->minValue(0)
-                            ->maxValue(10)
-                            ->default(function (?Submission $record) {
-                                return $record->review?->score ?? 10;
-                            })
-                            ->rules([
-                                'numeric',
-                                'min:0',
-                                'max:10',
-                            ]),
-                        Forms\Components\Textarea::make('override_reason')
-                            ->label('Override Reason')
-                            ->required()
-                            ->rows(3),
-                    ])
-                    ->action(function (Submission $record, array $data) {
-
-                        // Update the related Review
-                        $record->review()->updateOrCreate(
-                            ['submission_id' => $record->id],
-                            [
-                                'score' => $data['score'],
-                                'is_completed' => true,
-                                'admin_override' => true,
-                                'override_reason' => $data['override_reason'],
-                                'overridden_by' => Auth::user()->id,
-                                'overridden_at' => now()
-                            ],
-                        );
-
-                        // Update the Submission status
-                        $record->update([
-                            'status' => SubmissionTypes::COMPLETED->value,
-                        ]);
-                    }),
-                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
-                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
+                Tables\Actions\ForceDeleteAction::make(),
+                Tables\Actions\RestoreAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    // Tables\Actions\ForceDeleteBulkAction::make(),
                     Tables\Actions\RestoreBulkAction::make(),
-                    Tables\Actions\BulkAction::make('auto_assign_reviewers')
-                        ->label('Auto Assign Reviewers')
-                        ->icon('heroicon-o-users')
-                        ->color('success')
-                        ->form([
-                            Forms\Components\Select::make('assignment_strategy')
-                                ->label('Assignment Strategy')
-                                ->options([
-                                    \App\Services\ReviewerAssignmentService::STRATEGY_BALANCED => 'Balanced Load (Least assignments first)',
-                                    \App\Services\ReviewerAssignmentService::STRATEGY_ROUND_ROBIN => 'Round Robin (Equal distribution)',
-                                    \App\Services\ReviewerAssignmentService::STRATEGY_RANDOM => 'Random Assignment',
-                                ])
-                                ->default(\App\Services\ReviewerAssignmentService::STRATEGY_BALANCED)
-                                ->required()
-                                ->helperText('Choose how reviewers should be selected for assignment'),
-
-                            Forms\Components\Toggle::make('exclude_same_church')
-                                ->label('Exclude Same Church/District')
-                                ->default(true)
-                                ->helperText('Prevent assigning reviewers from same church or district as student'),
-
-                            Forms\Components\Toggle::make('only_active_reviewers')
-                                ->label('Only Active Reviewers')
-                                ->default(true)
-                                ->helperText('Only assign to active reviewers'),
-
-                            Forms\Components\Textarea::make('assignment_notes')
-                                ->label('Assignment Notes (Optional)')
-                                ->placeholder('Add any notes about this batch assignment...')
-                                ->rows(2),
-                        ])
-                        ->action(function (Collection $records, array $data) {
-                            if ($records->isEmpty()) {
-                                Notification::make()
-                                    ->title('No submissions selected')
-                                    ->body('Please select at least one submission to assign reviewers.')
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
-
-                            $assignmentService = new \App\Services\ReviewerAssignmentService();
-
-                            $eligibleSubmissions = $records->filter(function ($submission) {
-                                return $submission->status === SubmissionTypes::PENDING_REVIEW->value &&
-                                    $submission->review === null;
-                            });
-
-                            if ($eligibleSubmissions->isEmpty()) {
-                                Notification::make()
-                                    ->title('No eligible submissions')
-                                    ->body('All selected submissions already have reviewers assigned or are not in pending status.')
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
-
-                            $results = $assignmentService->assignReviewersToSubmissions(
-                                $eligibleSubmissions,
-                                $data['assignment_strategy'],
-                                $data['exclude_same_church'],
-                                $data['only_active_reviewers']
-                            );
-
-
-                            $message = "Successfully assigned {$results['assigned']} submissions to reviewers.";
-
-                            if (!empty($results['errors'])) {
-                                $message .= " " . count($results['errors']) . " assignments failed.";
-
-                                // Show first few errors in the notification
-                                if (count($results['errors']) <= 3) {
-                                    $message .= "\n\nErrors:\n• " . implode("\n• ", $results['errors']);
-                                } else {
-                                    $message .= "\n\nFirst 3 errors:\n• " . implode("\n• ", array_slice($results['errors'], 0, 3));
-                                    $message .= "\n• ... and " . (count($results['errors']) - 3) . " more errors";
-                                }
-                            }
-
-                            // Create detailed message for successful assignments
-                            if (!empty($results['assignments'])) {
-                                $assignmentDetails = "\n\nAssignments made:";
-                                $displayLimit = min(10, count($results['assignments']));
-
-                                foreach (array_slice($results['assignments'], 0, $displayLimit) as $assignment) {
-                                    $assignmentDetails .= "\n• Submission {$assignment['submission_id']} → {$assignment['reviewer_name']}";
-                                }
-
-                                if (count($results['assignments']) > $displayLimit) {
-                                    $assignmentDetails .= "\n• ... and " . (count($results['assignments']) - $displayLimit) . " more assignments";
-                                }
-
-                                $message .= $assignmentDetails;
-                            }
-
-                            // Determine notification color based on results
-                            $notificationColor = match (true) {
-                                $results['assigned'] > 0 && empty($results['errors']) => 'success',
-                                $results['assigned'] > 0 && !empty($results['errors']) => 'warning',
-                                default => 'danger'
-                            };
-
-                            Notification::make()
-                                ->title('Reviewer Assignment Complete')
-                                ->body($message)
-                                ->color($notificationColor)
-                                ->duration(15000) // Show for 15 seconds due to detailed info
-                                ->send();
-
-                            // Log the assignment activity
-                            Log::info("Bulk reviewer assignment completed", [
-                                'assigned_count' => $results['assigned'],
-                                'total_selected' => $records->count(),
-                                'strategy' => $data['assignment_strategy'],
-                                'exclude_same_church' => $data['exclude_same_church'],
-                                'only_active_reviewers' => $data['only_active_reviewers'],
-                                'error_count' => count($results['errors']),
-                                'errors' => $results['errors'],
-                                'assignments' => $results['assignments'],
-                                'admin_id' => Auth::id(),
-                                'notes' => $data['assignment_notes'] ?? '',
-                                'timestamp' => now()->toISOString()
-                            ]);
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Auto Assign Reviewers')
-                        ->modalDescription('This will automatically assign reviewers to selected submissions based on current workload and assignment strategy.')
-                        ->modalSubmitActionLabel('Assign Reviewers')
-                        ->deselectRecordsAfterCompletion()
-                        ->visible(function (): bool {
-                            // Remove the collection check from visibility since it can cause issues
-                            return true;
-                        }),
-//                        ->visible(function (Collection $records) {
-//                            // Only show if there are submissions that need assignment
-//                            return $records->filter(function ($submission) {
-//                                return $submission->status === SubmissionTypes::PENDING_REVIEW->value &&
-//                                    !$submission->review?->reviewer_id;
-//                            })->isNotEmpty();
-//                        }),
                 ]),
             ]);
-        // ->defaultSort('submitted_at', 'desc');
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+    public static function getRelations(): array { return []; }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListSubmissions::route('/'),
-            'create' => Pages\CreateSubmission::route('/create'),
-            'view' => Pages\ViewSubmission::route('/{record}'),
-            'edit' => Pages\EditSubmission::route('/{record}/edit'),
+            'index'  => Pages\ListSubmissions::route('/'),
+            'view'   => Pages\ViewSubmission::route('/{record}'),
+            'edit'   => Pages\EditSubmission::route('/{record}/edit'),
         ];
     }
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->withoutGlobalScopes([
-                SoftDeletingScope::class,
-            ])
-            ->with(['student', 'task.section', 'review.reviewer']);
-    }
-
-    protected static function getDownloadUrl(Submission $submission): ?string
-    {
-        try {
-            $fullPath = $submission->file_path.'/'.$submission->file_name;
-
-            // Check if file exists first
-            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
-                Log::error("File not found at path: {$fullPath}");
-                return null;
-            }
-
-            // Generate temporary URL with proper expiration
-            return Storage::disk(config('filesystems.default'))
-                ->temporaryUrl(
-                    $fullPath,
-                    now()->addMinutes(30),
-                    [
-                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
-                    ]
-                );
-        } catch (\Exception $e) {
-            Log::error("Failed to generate download URL: ".$e->getMessage());
-            return null;
-        }
+            ->with(['student', 'task.section.trainingProgram', 'review.reviewer'])
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 }

@@ -2,74 +2,69 @@
 
 namespace App\Filament\Student\Widgets;
 
-use Filament\Widgets\ChartWidget; // THIS is the correct import
 use App\Models\Submission;
-use Carbon\Carbon;
+use Filament\Widgets\ChartWidget;
 
-class PerformanceChartWidget extends ChartWidget // Extend ChartWidget, not BaseWidget
+class PerformanceChartWidget extends ChartWidget
 {
-    protected static ?string $heading = 'Performance Trend'; // Uncomment these
-    protected static ?string $description = 'Your score progression over time';
-    protected static ?int $sort = 4;
-    protected int | string | array $columnSpan = 'full';
+    protected static ?string $heading     = 'Performance Trend';
+    protected static ?string $description = 'Your score progression over time (as % of maximum)';
+    protected static ?int    $sort        = 4;
+    protected int|string|array $columnSpan = 'full';
 
     protected function getData(): array
     {
         $submissions = Submission::where('student_id', auth()->id())
-            ->whereHas('review', function ($query) {
-                $query->whereNotNull('score');
-            })
-            ->whereHas('task', function ($query) {
-                $query->whereHas('resultPublication', function ($subQuery) {
-                    $subQuery->where('is_published', true);
-                });
-            })
-            ->with(['review', 'task'])
-            ->orderBy('created_at') // Change this - can't order by relationship field directly
+            ->whereHas('review', fn ($q) => $q->whereNotNull('score'))
+            ->whereHas('task.resultPublication', fn ($q) => $q->where('is_published', true))
+            ->with(['review:id,submission_id,score,reviewed_at', 'task:id,title,max_score'])
             ->get()
-            ->sortBy('review.created_at'); // Sort after loading if needed
+            ->sortBy('review.reviewed_at');
 
         if ($submissions->isEmpty()) {
             return [
-                'datasets' => [
-                    [
-                        'label' => 'No data available',
-                        'data' => [],
-                        'borderColor' => '#9CA3AF',
-                        'backgroundColor' => 'rgba(156, 163, 175, 0.1)',
-                    ],
-                ],
+                'datasets' => [[
+                    'label'           => 'No results published yet',
+                    'data'            => [],
+                    'borderColor'     => '#9CA3AF',
+                    'backgroundColor' => 'rgba(156, 163, 175, 0.1)',
+                ]],
                 'labels' => [],
             ];
         }
 
-        $labels = $submissions->map(function ($submission) {
-            return $submission->task->title;
-        })->toArray();
+        $labels = $submissions->map(fn ($s) => $s->task?->title ?? 'Unknown')->values()->toArray();
 
-        $scores = $submissions->map(function ($submission) {
-            return $submission->review->score;
-        })->toArray();
+        $scorePercentages = $submissions->map(function ($s) {
+            $score    = (float) ($s->review?->score ?? 0);
+            $maxScore = (float) ($s->task?->max_score ?? 10);
 
-        $averageScore = collect($scores)->avg();
+            if ($maxScore <= 0) return 0;
+
+            return round(($score / $maxScore) * 100, 1);
+        })->values()->toArray();
+
+        $averagePct = count($scorePercentages) > 0
+            ? round(array_sum($scorePercentages) / count($scorePercentages), 1)
+            : 0;
 
         return [
             'datasets' => [
                 [
-                    'label' => 'Your Scores',
-                    'data' => $scores,
-                    'borderColor' => '#3B82F6',
+                    'label'           => 'Your Score (%)',
+                    'data'            => $scorePercentages,
+                    'borderColor'     => '#3B82F6',
                     'backgroundColor' => 'rgba(59, 130, 246, 0.1)',
-                    'fill' => true,
-                    'tension' => 0.4,
+                    'fill'            => true,
+                    'tension'         => 0.4,
                 ],
                 [
-                    'label' => 'Average Performance',
-                    'data' => array_fill(0, count($scores), round($averageScore, 1)),
-                    'borderColor' => '#EF4444',
+                    'label'           => 'Your Average (' . $averagePct . '%)',
+                    'data'            => array_fill(0, count($scorePercentages), $averagePct),
+                    'borderColor'     => '#EF4444',
                     'backgroundColor' => 'transparent',
-                    'borderDash' => [5, 5],
-                    'pointRadius' => 0,
+                    'borderDash'      => [5, 5],
+                    'pointRadius'     => 0,
                 ],
             ],
             'labels' => $labels,
@@ -85,16 +80,25 @@ class PerformanceChartWidget extends ChartWidget // Extend ChartWidget, not Base
     {
         return [
             'plugins' => [
-                'legend' => [
-                    'display' => true,
+                'legend' => ['display' => true],
+                'tooltip' => [
+                    'callbacks' => [
+                        'label' => 'function(ctx) { return ctx.dataset.label + ": " + ctx.parsed.y + "%"; }',
+                    ],
                 ],
             ],
             'scales' => [
                 'y' => [
                     'beginAtZero' => true,
-                    'max' => 100,
-                    'ticks' => [
+                    'max'         => 100,
+                    'ticks'       => [
+                        // FIX: The JS callback string is now correct — scores are
+                        // now actual percentages so the '%' suffix is accurate.
                         'callback' => 'function(value) { return value + "%"; }',
+                    ],
+                    'title' => [
+                        'display' => true,
+                        'text'    => 'Score (%)',
                     ],
                 ],
             ],
