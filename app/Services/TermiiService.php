@@ -21,9 +21,9 @@ class TermiiService
 
     // ── Config ─────────────────────────────────────────────────────────────────
 
-    protected function getApiKey(): string  { return config('sms.providers.termii.api_key'); }
-    protected function getApiUrl(): string  { return config('sms.providers.termii.url'); }
-    protected function getSenderId(): string { return config('sms.providers.termii.sender_id'); }
+    protected function getApiKey(): string  { return config('services.termii.api_key'); }
+    protected function getApiUrl(): string  { return config('services.termii.url'); }
+    protected function getSenderId(): string { return config('services.termii.sender_id'); }
     protected function getHeaders(): array  { return ['Content-Type' => 'application/json']; }
 
     /**
