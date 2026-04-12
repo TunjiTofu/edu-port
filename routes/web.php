@@ -383,5 +383,7 @@ Route::prefix('candidate')->name('candidate.')->group(function () {
 
     // Terms & Conditions — publicly accessible (opened in new tab from registration form)
     Route::get('/terms', fn () => view('candidate.terms'))->name('terms');
+    Route::get('/guide', fn () => view('candidate.guide'))->name('guide');
+
 
 });

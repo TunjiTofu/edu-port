@@ -467,7 +467,7 @@
                 </p>
                 <div class="hero-actions fu fu4">
                     <a href="{{ route('candidate.register') }}" class="btn btn-primary">Begin Your Journey →</a>
-                    <a href="{{ route('candidate.guide') }}" class="btn btn-outline">Candidate Guide</a>
+                    <a href="#about" class="btn btn-outline">What is Master Guide all about?</a>
                 </div>
                 <div class="hero-stats fu fu5">
                     <div><div class="stat-num">4</div><div class="stat-label">Growth Pillars</div></div>
