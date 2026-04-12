@@ -59,7 +59,7 @@ class CandidateRegistrationController extends Controller
                 'required',
                 'image',
                 'mimes:jpeg,png',
-                'max:1024',
+                'max:2048',
                 'dimensions:min_width=200,min_height=200',
             ],
             'terms'       => ['accepted'],
@@ -69,7 +69,7 @@ class CandidateRegistrationController extends Controller
             'email.unique'              => 'This email address is already registered.',
             'mg_mentor.required'        => 'Please enter the full name of your MG mentor.',
             'passport_photo.required'   => 'A passport photograph is required.',
-            'passport_photo.max'        => 'Passport photo must be under 1 MB.',
+            'passport_photo.max'        => 'Passport photo must be under 2 MB.',
             'passport_photo.dimensions' => 'Photo must be at least 200×200 pixels.',
             'terms.accepted'            => 'You must accept the Terms & Conditions to register.',
         ]);
@@ -193,17 +193,49 @@ class CandidateRegistrationController extends Controller
             'email'   => $user->email,
         ]);
 
+        // Clear the registration session BEFORE redirecting so it is committed
+        // to the session store as part of this request cycle.
         Session::forget('candidate_registration');
 
-        try {
-            Mail::to($user->email)->send(new CandidateWelcomeMail($user));
-        } catch (\Exception $e) {
-            Log::error('Candidate registration: welcome email failed', [
-                'event'   => 'candidate_welcome_email_failed',
-                'user_id' => $user->id,
-                'error'   => $e->getMessage(),
-            ]);
-        }
+        // ── Non-blocking welcome email ─────────────────────────────────────
+        // dispatch()->afterResponse() tells Laravel to run this closure AFTER
+        // the HTTP response has been flushed to the browser and the session
+        // has been written. This means:
+        //   1. The user is redirected immediately — no waiting for SMTP.
+        //   2. An SSL timeout or mail failure CANNOT cause "Session expired"
+        //      because the session is already committed before mail runs.
+        //   3. No queue worker is needed — works on cPanel sync hosting.
+        $userId = $user->id;
+        $userEmail = $user->email;
+        $userName  = $user->name;
+
+        dispatch(function () use ($userId, $userEmail, $userName) {
+            try {
+                // Re-fetch the user inside the closure — the original $user
+                // model instance may not serialize cleanly across the response boundary.
+                $freshUser = User::find($userId);
+
+                if ($freshUser) {
+                    Mail::to($userEmail)
+                        ->send(new CandidateWelcomeMail($freshUser));
+
+                    Log::info('Candidate registration: welcome email sent', [
+                        'event'   => 'candidate_welcome_email_sent',
+                        'user_id' => $userId,
+                        'email'   => $userEmail,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Candidate registration: welcome email failed', [
+                    'event'   => 'candidate_welcome_email_failed',
+                    'user_id' => $userId,
+                    'error'   => $e->getMessage(),
+                ]);
+                // Swallow the exception — user is already registered and logged in.
+                // The welcome email is informational; its failure must never
+                // surface to the candidate or block their onboarding.
+            }
+        })->afterResponse();
 
         return redirect('/student/login')
             ->with('success', "Welcome, {$user->name}! Your account is ready. Please log in.");
