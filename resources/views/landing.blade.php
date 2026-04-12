@@ -407,7 +407,7 @@
     <div class="nav-inner">
         <a href="/" class="nav-brand">
             <img src="{{ asset('images/logo.png') }}" alt="MG Portfolio Logo">
-            <span class="nav-name">MG Portfolio Portal</span>
+            <span class="nav-name">Ogun Conference MG Portfolio Portal</span>
         </a>
         <ul class="nav-links">
             <li><a href="#about">About MG</a></li>
@@ -463,7 +463,7 @@
                     The <em>Apex</em> of<br>youth ministry<br>leadership.
                 </h1>
                 <p class="hero-desc fu fu3">
-                    The Master Guide portfolio platform — submit your requirements, receive expert feedback, and document your journey to the highest level of youth leadership in the SDA Church.
+                    The Master Guide portfolio platform — submit your requirements, receive feedback, and document your journey to the highest level of youth leadership in the SDA Church.
                 </p>
                 <div class="hero-actions fu fu4">
                     <a href="{{ route('candidate.register') }}" class="btn btn-primary">Begin Your Journey →</a>
