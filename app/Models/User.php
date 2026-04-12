@@ -163,6 +163,7 @@ class User extends Authenticatable implements FilamentUser
      *  - phone number
      *  - church assigned
      *  - district assigned
+     *  - MG Mentor
      *  - passport photo uploaded
      *
      * Used by EnsureProfileComplete middleware to redirect incomplete profiles.
@@ -172,6 +173,7 @@ class User extends Authenticatable implements FilamentUser
         return ! empty($this->phone)
             && ! is_null($this->church_id)
             && ! is_null($this->district_id)
+            && ! empty($this->mg_mentor)
             && ! empty($this->passport_photo);
     }
 
