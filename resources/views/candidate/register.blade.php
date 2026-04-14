@@ -59,7 +59,7 @@
             {{-- Passport Photo --}}
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">
-                    Passport Photograph <span class="text-red-500">*</span>
+                    AYM Passport Photograph <span class="text-red-500">*</span>
                 </label>
 
                 {{-- Photo preview + upload area --}}
@@ -91,7 +91,7 @@
                            accept="image/jpeg,image/png" class="sr-only" required>
                     <p class="text-xs text-gray-400 text-center">
                         Clear face, square or portrait. JPEG/PNG, max 2 MB, min 200×200px. <br/>
-                        <span class="text-sm text-red-500 text-center">This must be a passport photo of you on AYM Uniform.</span>
+                        <span class="text-xs text-gray-500 text-center bold">Note: This must be a passport photo of you on AYM Uniform.</span>
                     </p>
                 </div>
                 @error('passport_photo')

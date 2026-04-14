@@ -52,6 +52,11 @@
             <p><strong>📅 Account Created:</strong> {{ now()->format('M j, Y') }}</p>
         </div>
 
+        <p>
+            <strong>🔗Join the WhatsApp Group by click the link below:</strong>
+            <a href="https://chat.whatsapp.com/DWK3wH4cBmn6bShWR4iadK?mode=gi_t" class="btn" style="color: #ffffff">https://chat.whatsapp.com/DWK3wH4cBmn6bShWR4iadK?mode=gi_t</a>
+        </p>
+
         <div class="btn-wrap">
             <a href="{{ $loginUrl }}" class="btn" style="color: #ffffff">Log In to Your Portal →</a>
         </div>
