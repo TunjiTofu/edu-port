@@ -9,6 +9,7 @@ use App\Models\Church;
 use App\Models\District;
 use App\Models\Role;
 use App\Models\User;
+use App\Rules\ValidRecaptcha;
 use App\Services\TermiiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -35,6 +36,12 @@ class CandidateRegistrationController extends Controller
     public function submitRegister(Request $request)
     {
         $validated = $request->validate([
+            // ── reCAPTCHA — must be first so bots are rejected early ──
+            'g-recaptcha-response' => [
+                'required',
+                new ValidRecaptcha(threshold: config('recaptcha.threshold', 0.5)),
+            ],
+
             'name'        => ['required', 'string', 'max:255'],
             'email'       => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone'       => [
@@ -72,6 +79,7 @@ class CandidateRegistrationController extends Controller
             'passport_photo.max'        => 'Passport photo must be under 2 MB.',
             'passport_photo.dimensions' => 'Photo must be at least 200×200 pixels.',
             'terms.accepted'            => 'You must accept the Terms & Conditions to register.',
+            'g-recaptcha-response.required' => 'The security check failed. Please refresh the page and try again.',
         ]);
 
         // Verify church belongs to selected district
