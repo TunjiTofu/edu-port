@@ -248,6 +248,7 @@
 use App\Http\Controllers\Candidate\CandidateRegistrationController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\SubmissionController;
+use App\Http\Middleware\ThrottleRegistration;
 use App\Models\Submission;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -364,7 +365,17 @@ Route::middleware('auth')->group(function () {
 Route::prefix('candidate')->name('candidate.')->group(function () {
 
     Route::get('/register', [CandidateRegistrationController::class, 'showRegister'])->name('register');
-    Route::post('/register', [CandidateRegistrationController::class, 'submitRegister'])->name('register.submit');
+//    Route::post('/register', [CandidateRegistrationController::class, 'submitRegister'])
+//        ->middleware('throttle:3,10')
+//        ->name('register.submit');
+
+    // POST /candidate/register — SUBMIT the form
+    // Two layers of protection:
+    //   1. ThrottleRegistration middleware  (per-IP + per-email rate limiting)
+    //   2. ValidRecaptcha rule inside the controller's validation
+    Route::post('/register', [CandidateRegistrationController::class, 'submitRegister'])
+        ->middleware('throttle:5,10')
+        ->name('register.submit');
 
     // AJAX: return churches for a given district_id (used by registration form JS)
     Route::get('/churches', [CandidateRegistrationController::class, 'getChurches'])->name('churches');
