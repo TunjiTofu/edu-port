@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Register — MG Portfolio Candidate Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.google.com/recaptcha/api.js?render={{ config('recaptcha.site_key') }}"></script>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col justify-center py-8 px-4 sm:px-6">
 
@@ -219,6 +220,15 @@
             <p class="text-xs text-red-500 -mt-3">{{ $message }}</p>
             @enderror
 
+            <input type="hidden" name="g-recaptcha-response" id="g-recaptcha-response">
+            {{-- Display reCAPTCHA error if validation fails --}}
+            @error('g-recaptcha-response')
+            <div class="mt-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <p class="text-sm text-red-600">{{ $message }}</p>
+            </div>
+            @enderror
+
+
             {{-- Submit --}}
             <button type="submit"
                     class="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3.5 rounded-xl text-sm transition shadow-md mt-1">
@@ -316,6 +326,35 @@
     @if (old('district_id'))
     districtSel.dispatchEvent(new Event('change'));
     @endif
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const form = document.querySelector('form[action="{{ route('candidate.register.submit') }}"]');
+
+        if (!form) return;
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault(); // Hold the submit
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Verifying…';
+
+            grecaptcha.ready(function () {
+                grecaptcha.execute('{{ config('recaptcha.site_key') }}', { action: 'candidate_register' })
+                    .then(function (token) {
+                        document.getElementById('g-recaptcha-response').value = token;
+                        form.submit(); // Now actually submit
+                    })
+                    .catch(function () {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Send Verification Code →';
+                        alert('Security check failed. Please refresh the page and try again.');
+                    });
+            });
+        });
+    });
 </script>
 </body>
 </html>
