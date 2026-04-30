@@ -117,9 +117,9 @@ class AdminPanelProvider extends PanelProvider
 
                     /* ── Square photo on ViewUser infolist ── */
                     .user-photo-lg {
-                        width: 160px !important;
-                        height: 160px !important;
-                        border-radius: 12px !important;
+                        width: 200px !important;
+                        height: 200px !important;
+                        border-radius: 4px !important;
                         object-fit: cover !important;
                         object-position: center top !important;
                         display: block;
