@@ -105,10 +105,10 @@ class AdminPanelProvider extends PanelProvider
 
                     /* ── Square passport photos in user cards ── */
                     .user-photo {
-                        width: 52px !important;
-                        height: 52px !important;
+                        width: 130px !important;
+                        height: 150px !important;
                         min-width: 52px !important;
-                        border-radius: 8px !important;
+                        border-radius: 4px !important;
                         object-fit: cover !important;
                         object-position: center top !important;
                         flex-shrink: 0 !important;
