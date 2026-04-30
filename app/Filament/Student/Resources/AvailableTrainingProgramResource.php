@@ -92,25 +92,29 @@ class AvailableTrainingProgramResource extends Resource
                                 ->badge()
                                 ->color(function ($state) {
                                     if (! $state) return 'gray';
-                                    $days = now()->diffInDays($state, false);
+                                    $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                                    $days = (int) now()->diffInDays($carbon->endOfDay(), false);
                                     return match (true) {
                                         $days < 0  => 'danger',
                                         $days <= 7 => 'warning',
                                         default    => 'success',
                                     };
                                 })
-                                // FIX: format as readable date string, not raw datetime
                                 ->formatStateUsing(function ($state) {
                                     if (! $state) return '🗓 No deadline';
                                     $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-                                    $days = now()->diffInDays($carbon, false);
-                                    $label = match (true) {
+
+                                    // Compare against end of deadline day so "today" is correct
+                                    // Cast to int to avoid decimal values like "0.37d left"
+                                    $days = (int) now()->diffInDays($carbon->copy()->endOfDay(), false);
+
+                                    return match (true) {
                                         $days < 0  => '⛔ Deadline passed',
-                                        $days == 0 => '⚠️ Closes today',
-                                        $days <= 7 => "⚠️ {$days}d left — " . $carbon->format('M j, Y'),
-                                        default    => '🗓 Deadline: ' . $carbon->format('M j, Y'),
+                                        $days === 0 => '⚠️ Closes today — ' . $carbon->format('M j, Y'),
+                                        $days === 1 => '⚠️ 1 day left — ' . $carbon->format('M j, Y'),
+                                        $days <= 7  => "⚠️ {$days} days left — " . $carbon->format('M j, Y'),
+                                        default     => '🗓 Deadline: ' . $carbon->format('M j, Y'),
                                     };
-                                    return $label;
                                 }),
 
                             // Start / End dates
