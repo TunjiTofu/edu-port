@@ -40,15 +40,13 @@ class TrainingProgramResource extends Resource
                     Tables\Columns\Layout\Split::make([
 
                         // Program image
-                        Tables\Columns\ImageColumn::make('image')
+                        Tables\Columns\ImageColumn::make('image_url')
                             ->label('')
-                            ->disk('public')
                             ->circular()
                             ->size(64)
                             ->defaultImageUrl(asset('images/logo.png'))
                             ->grow(false)
                             ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
-
 
                         Tables\Columns\Layout\Stack::make([
                             Tables\Columns\TextColumn::make('name')
