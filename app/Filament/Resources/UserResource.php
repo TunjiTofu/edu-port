@@ -125,17 +125,23 @@ class UserResource extends Resource
                     Tables\Columns\Layout\Split::make([
 
                         // ── Avatar ─────────────────────────────────────────
-                        // FIX: disk('public') causes Filament to generate a
-                        // signed/routed URL internally, which fails silently.
-                        // getStateUsing() feeds the pre-computed passport_photo_url
-                        // accessor directly; disk(null) renders it as a raw URL
-                        // with no further disk resolution — always works.
-                        Tables\Columns\ImageColumn::make('avatar')
+                        // Render the photo as raw HTML <img> to bypass Filament's
+                        // disk/URL resolution entirely. Both disk('public') and
+                        // disk(null)+getStateUsing failed silently on this setup.
+                        // TextColumn->html() renders whatever string is returned
+                        // directly into the cell — the most reliable approach.
+                        Tables\Columns\TextColumn::make('photo')
                             ->label('')
-                            ->getStateUsing(fn ($record) => $record?->passport_photo_url)
-                            ->disk(null)
-                            ->circular()
-                            ->size(52)
+                            ->html()
+                            ->getStateUsing(function ($record) {
+                                $url      = $record?->passport_photo_url
+                                    ?? asset('storage/passport-photos/default-avatar.jpg');
+                                $fallback = asset('storage/passport-photos/default-avatar.jpg');
+                                return '<img src="' . e($url) . '" '
+                                    . 'onerror="this.onerror=null;this.src=\'' . $fallback . '\'" '
+                                    . 'class="user-photo ring-2 ring-amber-400/40 shadow-sm" '
+                                    . 'alt="Photo">';
+                            })
                             ->grow(false),
 
                         // ── Name + role badge + status badges ──────────────

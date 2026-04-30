@@ -42,6 +42,49 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('MG Portfolio — Admin')
             ->favicon(asset('favicon.ico'))
 
+            // ── Sidebar behaviour ──────────────────────────────────────────
+            ->sidebarCollapsibleOnDesktop()   // adds toggle button; collapses to icon rail
+            ->sidebarWidth('15rem')           // slightly narrower than Filament default (20rem)
+            ->collapsedSidebarWidth('3.5rem') // icon-only rail width when collapsed
+
+            // ── Custom CSS ─────────────────────────────────────────────────
+            // Reduces the gap between sidebar and main content, and enforces
+            // consistent square passport photo thumbnails across all user cards.
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::BODY_START,
+                fn () => new \Illuminate\Support\HtmlString('
+                <style>
+//                    /* ── Tighter sidebar-to-content gap ── */
+//                    .fi-main-ctn {
+//                        padding-inline-start: 0 !important;
+//                    }
+//                    .fi-layout .fi-main {
+//                        padding: 1rem 1.25rem !important;
+//                    }
+
+                    /* ── Square passport photos in user cards ── */
+                    .user-photo {
+                        width: 130px !important;
+                        height: 150px !important;
+                        border-radius: 8px !important;
+                        object-fit: cover !important;
+                        object-position: center top !important;
+                        flex-shrink: 0;
+                        display: block;
+                    }
+
+                    /* ── Square photo on ViewUser infolist ── */
+                    .user-photo-lg {
+                        width: 200px !important;
+                        height: 200px !important;
+                        border-radius: 4px !important;
+                        object-fit: cover !important;
+                        object-position: center top !important;
+                        display: block;
+                    }
+                </style>')
+            )
+
             ->discoverResources(
                 in: app_path('Filament/Resources'),
                 for: 'App\\Filament\\Resources'

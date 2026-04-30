@@ -107,13 +107,19 @@ class ViewUser extends ViewRecord
                     ->schema([
                         Grid::make(['default' => 1, 'sm' => 5])
                             ->schema([
-                                ImageEntry::make('avatar')
+                                \Filament\Infolists\Components\TextEntry::make('photo')
                                     ->label('')
-                                    ->getStateUsing(fn ($record) => $record?->passport_photo_url)
-                                    ->disk(null)
-                                    ->circular()
-                                    ->size(100)
-                                    ->columnSpan(1),
+                                    ->html()
+                                    ->getStateUsing(function ($record) {
+                                        $url      = $record?->passport_photo_url
+                                            ?? asset('storage/passport-photos/default-avatar.jpg');
+                                        $fallback = asset('storage/passport-photos/default-avatar.jpg');
+                                        return '<img src="' . e($url) . '" '
+                                            . 'onerror="this.onerror=null;this.src=\'' . $fallback . '\'" '
+                                            . 'class="user-photo-lg ring-4 ring-amber-400/40 shadow-md" '
+                                            . 'alt="Passport photo">';
+                                    })
+                                    ->columnSpan(['default' => 1, 'sm' => 2]),
 
                                 \Filament\Infolists\Components\Group::make([
                                     TextEntry::make('name')
