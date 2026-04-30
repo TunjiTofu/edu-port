@@ -51,7 +51,7 @@ class AdminPanelProvider extends PanelProvider
                 for: 'App\\Filament\\Pages'
             )
             ->pages([
-                Pages\Dashboard::class,
+                \App\Filament\Pages\AdminDashboard::class,
             ])
             ->widgets([
                 // Announcements shown first — always visible when relevant

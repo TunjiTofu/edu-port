@@ -3,104 +3,102 @@
 namespace App\Filament\Widgets;
 
 use App\Enums\SubmissionTypes;
-use App\Models\Submission;
+use App\Filament\Widgets\Concerns\FiltersYearByEnrollment;
 use App\Models\Review;
+use App\Models\Submission;
 use App\Models\User;
 use App\Services\Utility\Constants;
 use Carbon\Carbon;
-use Filament\Actions\Action;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
 
 class SubmissionAdminWidget extends BaseWidget
 {
-    protected static ?string $pollingInterval = '30s';
-    protected static ?int $sort = 3;
-    protected int | string | array $columnSpan = 'full'; // Width
-    protected static bool $isLazy = true; // Lazy loading
+    use FiltersYearByEnrollment;
 
-    protected function getColumns(): int
-    {
-        return 4; // This sets 4 stat cards per row
-    }
+    protected static ?string $pollingInterval = '30s';
+    protected static ?int    $sort            = 3;
+    protected int|string|array $columnSpan    = 'full';
+    protected static bool $isLazy             = true;
+
+    protected function getColumns(): int { return 4; }
 
     protected function getHeading(): string
     {
-        $total = Submission::count();
-        return "Submission Overview ({$total} total)";
+        $year  = $this->getSelectedYear();
+        $label = $year ? " — {$year}" : '';
+        $total = $this->baseSubmissionQuery()->count();
+        return "Submission Overview{$label} ({$total} total)";
     }
+
     protected function getDescription(): ?string
     {
-        return 'Real-time submission statistics and metrics';
+        return 'Real-time submission statistics filtered by the selected year.';
     }
 
     protected function getStats(): array
     {
-        // Get current period data
-        $totalSubmissions = Submission::count();
-        $pendingReview = Submission::where('status', SubmissionTypes::PENDING_REVIEW->value)->count();
-        $underReview = Submission::where('status', SubmissionTypes::UNDER_REVIEW->value)->count();
-        $completed = Submission::where('status', SubmissionTypes::COMPLETED->value)->count();
-        $needsRevision = Submission::where('status', SubmissionTypes::NEEDS_REVISION->value)->count();
-        $flagged = Submission::where('status', SubmissionTypes::FLAGGED->value)->count();
+        $year  = $this->getSelectedYear();
+        $base  = $this->baseSubmissionQuery();
 
-        // Get previous period for comparison
-        $previousPeriodStart = Carbon::now()->subDays(30);
-        $currentPeriodStart = Carbon::now()->subDays(15);
+        $totalSubmissions = (clone $base)->count();
+        $pendingReview    = (clone $base)->where('status', SubmissionTypes::PENDING_REVIEW->value)->count();
+        $underReview      = (clone $base)->where('status', SubmissionTypes::UNDER_REVIEW->value)->count();
+        $completed        = (clone $base)->where('status', SubmissionTypes::COMPLETED->value)->count();
+        $needsRevision    = (clone $base)->where('status', SubmissionTypes::NEEDS_REVISION->value)->count();
+        $flagged          = (clone $base)->where('status', SubmissionTypes::FLAGGED->value)->count();
 
-        $previousPeriodSubmissions = Submission::whereBetween('created_at', [$previousPeriodStart, $currentPeriodStart])->count();
-        $currentPeriodSubmissions = Submission::where('created_at', '>=', $currentPeriodStart)->count();
+        $overdueSubmissions = (clone $base)
+            ->where('status', SubmissionTypes::PENDING_REVIEW->value)
+            ->where('created_at', '<', Carbon::now()->subDays(7))
+            ->count();
 
-        // Calculate percentage change
+        // 30-day trend
+        $previousPeriodStart      = Carbon::now()->subDays(30);
+        $currentPeriodStart       = Carbon::now()->subDays(15);
+        $previousPeriodSubmissions = (clone $base)->whereBetween('created_at', [$previousPeriodStart, $currentPeriodStart])->count();
+        $currentPeriodSubmissions  = (clone $base)->where('created_at', '>=', $currentPeriodStart)->count();
+
         $submissionChange = $previousPeriodSubmissions > 0
             ? (($currentPeriodSubmissions - $previousPeriodSubmissions) / $previousPeriodSubmissions) * 100
             : 0;
 
-        // Get average review time
+        $avgScore = Review::whereNotNull('score')->avg('score') ?? 0;
+
         $avgReviewTime = Review::whereNotNull('reviewed_at')
             ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, created_at, reviewed_at)) as avg_hours')
-            ->first()
-            ->avg_hours ?? 0;
+            ->first()?->avg_hours ?? 0;
 
-        // Get active reviewers count
         $activeReviewers = User::where('role_id', Constants::REVIEWER_ID)
             ->where('is_active', true)
             ->count();
 
-        // Get overdue submissions (older than 7 days without review)
-        $overdueSubmissions = Submission::where('status', SubmissionTypes::PENDING_REVIEW->value)
-            ->where('created_at', '<', Carbon::now()->subDays(7))
-            ->count();
-
-        // Get average score
-        $avgScore = Review::whereNotNull('score')
-            ->avg('score') ?? 0;
-
-        // Get completion rate
         $completionRate = $totalSubmissions > 0
             ? ($completed / $totalSubmissions) * 100
             : 0;
 
         return [
             Stat::make('Total Submissions', $totalSubmissions)
-                ->description($submissionChange > 0 ? "{$submissionChange}% increase" : "{$submissionChange}% decrease")
-                ->descriptionIcon($submissionChange > 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
-                ->color($submissionChange > 0 ? 'success' : 'danger')
-                ->chart($this->getSubmissionChart()),
+                ->description($submissionChange >= 0
+                    ? round($submissionChange, 1) . '% increase (15d)'
+                    : round(abs($submissionChange), 1) . '% decrease (15d)')
+                ->descriptionIcon($submissionChange >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
+                ->color($submissionChange >= 0 ? 'success' : 'danger')
+                ->chart($this->getSubmissionChart($year)),
 
             Stat::make('Pending Review', $pendingReview)
-                ->description($overdueSubmissions > 0 ? "{$overdueSubmissions} overdue" : 'On track')
+                ->description($overdueSubmissions > 0 ? "{$overdueSubmissions} overdue >7 days" : 'On track')
                 ->descriptionIcon($overdueSubmissions > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
                 ->color($overdueSubmissions > 0 ? 'warning' : 'success'),
 
             Stat::make('Under Review', $underReview)
-                ->description("Avg: " . round($avgReviewTime, 1) . " hours")
+                ->description('Avg: ' . round($avgReviewTime, 1) . ' hours')
                 ->descriptionIcon('heroicon-m-clock')
                 ->color('info'),
 
             Stat::make('Completed', $completed)
-                ->description(round($completionRate, 1) . "% completion rate")
+                ->description(round($completionRate, 1) . '% completion rate')
                 ->descriptionIcon('heroicon-m-check-badge')
                 ->color('success'),
 
@@ -126,14 +124,24 @@ class SubmissionAdminWidget extends BaseWidget
         ];
     }
 
-    private function getSubmissionChart(): array
+    /**
+     * Base query scoped by the selected year.
+     * Called with clone() so we can reuse the same base for each stat.
+     */
+    private function baseSubmissionQuery()
     {
-        return Submission::selectRaw('DATE(created_at) as date, COUNT(*) as count')
-            ->where('created_at', '>=', Carbon::now()->subDays(7))
-            ->groupBy('date')
-            ->orderBy('date')
-            ->pluck('count')
-            ->toArray();
+        $query = Submission::query();
+        return $this->scopeSubmissionsByYear($query);
+    }
+
+    private function getSubmissionChart(?int $year): array
+    {
+        $query = Submission::selectRaw('DATE(created_at) as date, COUNT(*) as count')
+            ->where('created_at', '>=', Carbon::now()->subDays(7));
+
+        $this->scopeSubmissionsByYear($query, $year);
+
+        return $query->groupBy('date')->orderBy('date')->pluck('count')->toArray();
     }
 
     private function getScoreDescription(float $avgScore): string
@@ -142,7 +150,7 @@ class SubmissionAdminWidget extends BaseWidget
             $avgScore >= 8 => 'Excellent performance',
             $avgScore >= 6 => 'Good performance',
             $avgScore >= 4 => 'Fair performance',
-            default => 'Needs improvement'
+            default        => 'Needs improvement',
         };
     }
 
@@ -151,20 +159,18 @@ class SubmissionAdminWidget extends BaseWidget
         return match (true) {
             $avgScore >= 7 => 'success',
             $avgScore >= 5 => 'warning',
-            default => 'danger'
+            default        => 'danger',
         };
     }
 
     private function getReviewerWorkload(int $reviewers, int $underReview): string
     {
-        if ($reviewers == 0) return 'No active reviewers';
-
-        $workloadPerReviewer = $underReview / $reviewers;
-
+        if ($reviewers === 0) return 'No active reviewers';
+        $load = $underReview / $reviewers;
         return match (true) {
-            $workloadPerReviewer > 10 => 'High workload',
-            $workloadPerReviewer > 5 => 'Moderate workload',
-            default => 'Light workload'
+            $load > 10 => 'High workload',
+            $load > 5  => 'Moderate workload',
+            default    => 'Light workload',
         };
     }
 }

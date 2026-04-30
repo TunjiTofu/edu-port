@@ -47,8 +47,8 @@ class TrainingProgramResource extends Resource
                             ->label('Program Code')
                             ->required()
                             ->unique(TrainingProgram::class, 'code', ignoreRecord: true)
-                            ->maxLength(20)
-                            ->alphaNum(),
+                            ->maxLength(20),
+//                            ->alphaNum(),
 
                         Forms\Components\FileUpload::make('image')
                             ->label('Program Image')

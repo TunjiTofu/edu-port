@@ -107,15 +107,12 @@ class ViewUser extends ViewRecord
                     ->schema([
                         Grid::make(['default' => 1, 'sm' => 5])
                             ->schema([
-                                ImageEntry::make('passport_photo_url')
+                                ImageEntry::make('avatar')
                                     ->label('')
+                                    ->getStateUsing(fn ($record) => $record?->passport_photo_url)
                                     ->disk(null)
                                     ->circular()
                                     ->size(100)
-                                    ->defaultImageUrl(
-                                        fn ($record) => \Illuminate\Support\Facades\Storage::disk('public')
-                                            ->url('passport-photos/default-avatar.jpg')
-                                    )
                                     ->columnSpan(1),
 
                                 \Filament\Infolists\Components\Group::make([

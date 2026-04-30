@@ -32,7 +32,8 @@ class AvailableTrainingProgramResource extends Resource
     {
         return parent::getEloquentQuery()
             ->active()
-            ->notEnrolledBy(Auth::id())
+            ->forYear(now()->year)         // only current year's programs
+            ->notEnrolledBy(Auth::id())    // exclude ones already joined
             ->withCount(['sections', 'enrollments']);
     }
 
@@ -45,12 +46,14 @@ class AvailableTrainingProgramResource extends Resource
                     Tables\Columns\Layout\Split::make([
 
                         // Program image — small circle on the left
-                        Tables\Columns\ImageColumn::make('image')
+                        Tables\Columns\ImageColumn::make('image_url')
                             ->label('')
-                            ->disk('public')
+                            // FIX: Use the image_url accessor (cached S3/public URL)
+                            // instead of the raw image path so it resolves correctly
+                            // on both local public disk and S3 private storage.
                             ->circular()
                             ->size(64)
-                            ->defaultImageUrl(asset('images/logo.png'))
+                            ->defaultImageUrl(asset('images/default-program.png'))
                             ->grow(false)
                             ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
 
@@ -96,23 +99,17 @@ class AvailableTrainingProgramResource extends Resource
                                         default    => 'success',
                                     };
                                 })
-
+                                // FIX: format as readable date string, not raw datetime
                                 ->formatStateUsing(function ($state) {
                                     if (! $state) return '🗓 No deadline';
-
                                     $carbon = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-
-                                    $days = round(now()->diffInDays($carbon, false));
-                                    $hours = round(now()->diffInHours($carbon, false),1);
-
+                                    $days = now()->diffInDays($carbon, false);
                                     $label = match (true) {
                                         $days < 0  => '⛔ Deadline passed',
-                                        $days < 1 && $hours > 0 => "⚠️ {$hours}hours left — " . $carbon->format('M j, Y g:i A'),
-                                        $days == 0 && $hours <= 0 => '⚠️ Closes today',
-                                        $days <= 7 => "⚠️ {$days} days left — " . $carbon->format('M j, Y'),
+                                        $days == 0 => '⚠️ Closes today',
+                                        $days <= 7 => "⚠️ {$days}d left — " . $carbon->format('M j, Y'),
                                         default    => '🗓 Deadline: ' . $carbon->format('M j, Y'),
                                     };
-
                                     return $label;
                                 }),
 
@@ -179,9 +176,43 @@ class AvailableTrainingProgramResource extends Resource
                     ->button(),
             ])
             ->bulkActions([])
-            ->emptyStateHeading('No Available Programs')
-            ->emptyStateDescription('There are no programs open for enrollment right now.')
-            ->emptyStateIcon('heroicon-o-academic-cap');
+            ->emptyStateHeading(function () {
+                $userId = Auth::id();
+                if (ProgramEnrollment::where('student_id', $userId)->exists()) {
+                    return 'You Are Already Enrolled';
+                }
+                return 'No Available Programs';
+            })
+            ->emptyStateDescription(function () {
+                $userId     = Auth::id();
+                $enrollment = ProgramEnrollment::with('trainingProgram')
+                    ->where('student_id', $userId)->first();
+
+                if ($enrollment) {
+                    $program = $enrollment->trainingProgram;
+                    $year    = $program?->year;
+                    $name    = $program?->name ?? 'a program';
+
+                    if ($year && $year < now()->year) {
+                        return "You are enrolled in '{$name}' ({$year}) and will continue that program. "
+                            . "Go to My Training Programs to see your tasks and progress.";
+                    }
+
+                    return "You are already enrolled in '{$name}'. "
+                        . "Go to My Training Programs to see your tasks.";
+                }
+
+                return 'There are no programs open for enrollment this year. Check back later or contact your administrator.';
+            })
+            ->emptyStateIcon('heroicon-o-academic-cap')
+            ->emptyStateActions([
+                Tables\Actions\Action::make('go_to_program')
+                    ->label('View My Training Program')
+                    ->url('/student/training-programs')
+                    ->icon('heroicon-o-arrow-right')
+                    ->color('primary')
+                    ->visible(fn () => ProgramEnrollment::where('student_id', Auth::id())->exists()),
+            ]);
     }
 
     public static function handleEnroll(TrainingProgram $record): void
@@ -198,21 +229,59 @@ class AvailableTrainingProgramResource extends Resource
         Log::info('Enrollment: attempt', array_merge($context, ['event' => 'enrollment_attempt']));
 
         try {
+            // ── Guard 1: program must be current year ──────────────────────
+            if ($record->year && $record->year !== now()->year) {
+                Log::warning('Enrollment: rejected — not current year program', $context);
+                Notification::make()
+                    ->title('Enrollment Not Available')
+                    ->body('You can only enroll in programs for the current year (' . now()->year . ').')
+                    ->warning()->send();
+                return;
+            }
+
+            // ── Guard 2: candidate must not be enrolled in ANY program ─────
+            // The curriculum is the same each year. A candidate already enrolled
+            // in a 2025 program continues that program — they should not also
+            // enroll in the 2026 version of the same curriculum.
+            $existingEnrollment = ProgramEnrollment::where('student_id', $candidateId)->first();
+
+            if ($existingEnrollment) {
+                $existingProgram = $existingEnrollment->trainingProgram;
+                $programName     = $existingProgram?->name ?? 'a previous program';
+                $programYear     = $existingProgram?->year;
+
+                Log::warning('Enrollment: rejected — already enrolled in another program',
+                    array_merge($context, [
+                        'event'               => 'enrollment_rejected_cross_program',
+                        'existing_program_id' => $existingEnrollment->training_program_id,
+                    ])
+                );
+
+                $message = $programYear && $programYear < now()->year
+                    ? "You are currently enrolled in '{$programName}' ({$programYear}) and are continuing that program. "
+                    . "Candidates who started in a previous year continue their existing enrollment rather than re-enrolling."
+                    : "You are already enrolled in '{$programName}'.";
+
+                Notification::make()
+                    ->title('Already Enrolled')
+                    ->body($message)
+                    ->warning()->persistent()->send();
+                return;
+            }
+
+            // ── Guard 3: registration open ─────────────────────────────────
             if (! $record->isRegistrationOpen()) {
-                Log::info('Enrollment: rejected — registration closed', array_merge($context, ['event' => 'enrollment_rejected_registration_closed']));
-                Notification::make()->title('Registration Closed')->body('Registration for this program has closed.')->warning()->send();
+                Log::info('Enrollment: rejected — registration closed', $context);
+                Notification::make()->title('Registration Closed')
+                    ->body('Registration for this program has closed.')->warning()->send();
                 return;
             }
 
+            // ── Guard 4: capacity ──────────────────────────────────────────
             if (! $record->hasAvailableCapacity()) {
-                Log::info('Enrollment: rejected — program full', array_merge($context, ['event' => 'enrollment_rejected_program_full']));
-                Notification::make()->title('Program Full')->body('This program has reached its maximum enrollment capacity.')->warning()->send();
-                return;
-            }
-
-            if (ProgramEnrollment::where('student_id', $candidateId)->where('training_program_id', $record->id)->exists()) {
-                Log::warning('Enrollment: duplicate attempt', array_merge($context, ['event' => 'enrollment_rejected_already_enrolled']));
-                Notification::make()->title('Already Enrolled')->body('You are already enrolled in this program.')->warning()->send();
+                Log::info('Enrollment: rejected — program full', $context);
+                Notification::make()->title('Program Full')
+                    ->body('This program has reached its maximum enrollment capacity.')->warning()->send();
                 return;
             }
 
@@ -223,21 +292,42 @@ class AvailableTrainingProgramResource extends Resource
                 'status'              => ProgramEnrollmentStatus::ACTIVE->value,
             ]);
 
-            Log::info('Enrollment: success', array_merge($context, ['event' => 'enrollment_success', 'enrollment_id' => $enrollment->id]));
+            Log::info('Enrollment: success', array_merge($context, [
+                'event'         => 'enrollment_success',
+                'enrollment_id' => $enrollment->id,
+            ]));
 
-            Notification::make()->title('Enrolled!')->body("You're now enrolled in '{$record->name}'.'")->success()->send();
+            Notification::make()
+                ->title('Enrolled!')
+                ->body("You are now enrolled in '{$record->name}'. Your tasks are ready.")
+                ->success()->send();
 
             redirect()->to('/student/training-programs');
 
         } catch (\Exception $e) {
-            Log::error('Enrollment: error', array_merge($context, ['event' => 'enrollment_error', 'error' => $e->getMessage()]));
-            Notification::make()->title('Enrollment Failed')->body('An error occurred. Please try again.')->danger()->send();
+            Log::error('Enrollment: error', array_merge($context, [
+                'event' => 'enrollment_error',
+                'error' => $e->getMessage(),
+            ]));
+            Notification::make()->title('Enrollment Failed')
+                ->body('An error occurred. Please try again.')->danger()->send();
         }
     }
 
     public static function getNavigationBadge(): ?string
     {
-        $count = TrainingProgram::active()->notEnrolledBy(Auth::id())->count();
+        $userId = Auth::id();
+
+        // If already enrolled in any program, there's nothing to show here
+        if (ProgramEnrollment::where('student_id', $userId)->exists()) {
+            return null;
+        }
+
+        $count = TrainingProgram::active()
+            ->forYear(now()->year)
+            ->notEnrolledBy($userId)
+            ->count();
+
         return $count > 0 ? (string) $count : null;
     }
 

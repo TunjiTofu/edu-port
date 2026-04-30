@@ -64,6 +64,8 @@
         {{-- OTP form --}}
         <form method="POST" action="{{ route('candidate.verify-otp.submit') }}" id="otp-form">
             @csrf
+            {{-- Token carries the pending registration reference through the URL-independent POST --}}
+            <input type="hidden" name="token" value="{{ $token }}">
 
             <div class="mb-5">
                 <label class="block text-sm font-medium text-gray-700 mb-2 text-center">
@@ -116,6 +118,7 @@
                 <form method="POST" action="{{ route('candidate.resend-otp') }}" class="flex-1">
                     @csrf
                     <input type="hidden" name="channel" value="sms">
+                    <input type="hidden" name="token" value="{{ $token }}">
                     <button type="submit" id="btn-sms" disabled
                             class="resend-btn w-full flex items-center justify-center gap-2 border border-gray-300 text-gray-400 font-medium py-2.5 px-4 rounded-lg text-sm transition cursor-not-allowed"
                             data-active-class="border-green-600 text-green-700 hover:bg-green-50 cursor-pointer"
@@ -132,6 +135,7 @@
                 <form method="POST" action="{{ route('candidate.resend-otp') }}" class="flex-1">
                     @csrf
                     <input type="hidden" name="channel" value="voice">
+                    <input type="hidden" name="token" value="{{ $token }}">
                     <button type="submit" id="btn-voice" disabled
                             class="resend-btn w-full flex items-center justify-center gap-2 border border-gray-300 text-gray-400 font-medium py-2.5 px-4 rounded-lg text-sm transition cursor-not-allowed"
                             data-active-class="border-blue-600 text-blue-700 hover:bg-blue-50 cursor-pointer"
@@ -217,10 +221,33 @@
     }
 
     // ── Auto-submit on 6 digits ───────────────────────────────────────
+    let submitting = false; // guard — prevents double submission
+
     otpInput.addEventListener('input', function () {
         this.value = this.value.replace(/\D/g, '').slice(0, 6);
-        if (this.value.length === 6 && !expired) {
+        if (this.value.length === 6 && !expired && !submitting) {
+            submitting = true;
+
+            // Visual feedback — lock the button immediately
+            const verifyBtn = document.querySelector('#otp-form button[type="submit"]');
+            if (verifyBtn) {
+                verifyBtn.disabled = true;
+                verifyBtn.textContent = 'Verifying…';
+                verifyBtn.className = 'w-full bg-green-400 text-white font-semibold py-3.5 rounded-xl text-sm cursor-not-allowed';
+            }
+
             setTimeout(() => document.getElementById('otp-form').submit(), 300);
+        }
+    });
+
+    // Also guard manual submit button click
+    document.getElementById('otp-form').addEventListener('submit', function () {
+        if (submitting) return false; // block second submit
+        submitting = true;
+        const verifyBtn = this.querySelector('button[type="submit"]');
+        if (verifyBtn) {
+            verifyBtn.disabled = true;
+            verifyBtn.textContent = 'Verifying…';
         }
     });
 </script>
