@@ -53,7 +53,7 @@ class AvailableTrainingProgramResource extends Resource
                             // on both local public disk and S3 private storage.
                             ->circular()
                             ->size(64)
-                            ->defaultImageUrl(asset('images/default-program.png'))
+                            ->defaultImageUrl(asset('images/logo.png'))
                             ->grow(false)
                             ->extraImgAttributes(['class' => 'ring-2 ring-green-500/30 shadow-md']),
 
