@@ -374,13 +374,15 @@ Route::prefix('candidate')->name('candidate.')->group(function () {
     //   1. ThrottleRegistration middleware  (per-IP + per-email rate limiting)
     //   2. ValidRecaptcha rule inside the controller's validation
     Route::post('/register', [CandidateRegistrationController::class, 'submitRegister'])
-        ->middleware('throttle:5,10')
+//        ->middleware('throttle:5,10')
         ->name('register.submit');
 
     // AJAX: return churches for a given district_id (used by registration form JS)
     Route::get('/churches', [CandidateRegistrationController::class, 'getChurches'])->name('churches');
 
     Route::get('/verify-otp', [CandidateRegistrationController::class, 'showVerifyOtp'])->name('verify-otp');
+    // token={uuid} is required as a query param — passed from submitRegister and resendOtp
+
     // 3 attempts per IP per 10 minutes — allows for mistyping without locking out
     Route::post('/verify-otp', [CandidateRegistrationController::class, 'submitVerifyOtp'])
         ->middleware('throttle:5,10')

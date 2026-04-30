@@ -42,6 +42,91 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('MG Portfolio — Admin')
             ->favicon(asset('favicon.ico'))
 
+            // ── Sidebar behaviour ──────────────────────────────────────────
+            ->sidebarCollapsibleOnDesktop()   // adds toggle button; collapses to icon rail
+            ->sidebarWidth('15rem')           // slightly narrower than Filament default (20rem)
+            ->collapsedSidebarWidth('3.5rem') // icon-only rail width when collapsed
+
+            // ── Custom CSS ─────────────────────────────────────────────────
+            // Reduces the gap between sidebar and main content, and enforces
+            // consistent square passport photo thumbnails across all user cards.
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::BODY_START,
+                fn () => new \Illuminate\Support\HtmlString('
+                <style>
+                    /* ── Tighter sidebar-to-content gap ── */
+                    .fi-main-ctn {
+                        padding-inline-start: 0 !important;
+                    }
+                    .fi-layout .fi-main {
+                        padding: 1rem 1.25rem !important;
+                    }
+
+                    /* ── User cards: prevent content overflowing border ── */
+                    .fi-ta-content .fi-ta-record-checkbox-cell,
+                    [class*="fi-ta-"] .fi-ta-col {
+                        min-width: 0;
+                    }
+
+                    /* The card container itself must clip overflow */
+                    .fi-ta-ctn [class*="rounded"] {
+                        overflow: hidden;
+                    }
+
+                    /* Name text: wrap long names, never overflow */
+                    .fi-ta-col .font-bold,
+                    .fi-ta-col [class*="font-bold"],
+                    .fi-ta-col .text-base {
+                        white-space: normal !important;
+                        word-break: break-word !important;
+                        overflow-wrap: break-word !important;
+                        line-height: 1.3 !important;
+                    }
+
+                    /* Stack layout columns: constrain width so text wraps */
+                    .fi-ta-col-stack {
+                        min-width: 0 !important;
+                        max-width: 100% !important;
+                        overflow: hidden !important;
+                    }
+
+                    /* Split layout inside cards: keep items from overflowing */
+                    .fi-ta-col-split {
+                        min-width: 0 !important;
+                        overflow: hidden !important;
+                    }
+
+                    /* All text columns inside card stacks */
+                    .fi-ta-col-stack .fi-ta-col-text {
+                        white-space: normal !important;
+                        word-break: break-word !important;
+                        overflow: hidden !important;
+                    }
+
+                    /* ── Square passport photos in user cards ── */
+                    .user-photo {
+                        width: 130px !important;
+                        height: 150px !important;
+                        min-width: 52px !important;
+                        border-radius: 4px !important;
+                        object-fit: cover !important;
+                        object-position: center top !important;
+                        flex-shrink: 0 !important;
+                        display: block;
+                    }
+
+                    /* ── Square photo on ViewUser infolist ── */
+                    .user-photo-lg {
+                        width: 200px !important;
+                        height: 200px !important;
+                        border-radius: 4px !important;
+                        object-fit: cover !important;
+                        object-position: center top !important;
+                        display: block;
+                    }
+                </style>')
+            )
+
             ->discoverResources(
                 in: app_path('Filament/Resources'),
                 for: 'App\\Filament\\Resources'
@@ -51,7 +136,7 @@ class AdminPanelProvider extends PanelProvider
                 for: 'App\\Filament\\Pages'
             )
             ->pages([
-                Pages\Dashboard::class,
+                \App\Filament\Pages\AdminDashboard::class,
             ])
             ->widgets([
                 // Announcements shown first — always visible when relevant
