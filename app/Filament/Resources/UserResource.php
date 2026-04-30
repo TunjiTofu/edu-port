@@ -152,7 +152,10 @@ class UserResource extends Resource
                                 Tables\Columns\TextColumn::make('name')
                                     ->weight('bold')
                                     ->searchable()
-                                    ->size(Tables\Columns\TextColumn\TextColumnSize::Medium),
+                                    ->size(Tables\Columns\TextColumn\TextColumnSize::Medium)
+                                    ->wrap()        // wrap instead of overflow
+                                    ->limit(40)     // truncate very long names with ellipsis
+                                    ->tooltip(fn ($record) => $record->name), // full name on hover
 
                                 Tables\Columns\TextColumn::make('role.name')
                                     ->badge()
