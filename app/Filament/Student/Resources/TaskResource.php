@@ -373,8 +373,8 @@ class TaskResource extends Resource
                             ->label('Upload Your Work')
                             ->acceptedFileTypes([
                                 'application/pdf',
-                                'application/msword',
-                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+//                                'application/msword',
+//                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                             ])
                             ->maxSize(10240)
                             ->required()
@@ -382,7 +382,7 @@ class TaskResource extends Resource
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF, DOC or DOCX — max 2 MB'),
+                            ->helperText('PDF — max 2 MB'),
 
                         Textarea::make('notes')
                             ->label('Notes for your Reviewer (Optional)')
