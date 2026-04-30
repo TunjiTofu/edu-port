@@ -31,12 +31,13 @@ class TrainingProgram extends Model
     protected function casts(): array
     {
         return [
-            'start_date' => 'date',
-            'end_date' => 'date',
+            'start_date'            => 'date',
+            'end_date'              => 'date',
             'registration_deadline' => 'date',
-            'is_active' => 'boolean',
-            'max_students' => 'integer',
-            'passing_score' => 'decimal:2',
+            'is_active'             => 'boolean',
+            'max_students'          => 'integer',
+            'passing_score'         => 'decimal:2',
+            'year'                  => 'integer',
         ];
     }
 
@@ -149,11 +150,11 @@ class TrainingProgram extends Model
                     'image_path' => $this->image,
                     'error' => $e->getMessage()
                 ]);
-                return '/images/default-program.png';
+                return '/images/logo.png';
             }
         }
 
-        return '/images/default-program.png'; // Default image path
+        return '/images/logo.png'; // Default image path
     }
 
     // ── Query Scopes ───────────────────────────────────────────────────────────

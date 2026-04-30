@@ -234,7 +234,7 @@ class AvailableTrainingProgramResource extends Resource
 
         try {
             // ── Guard 1: program must be current year ──────────────────────
-            if ($record->year && $record->year !== now()->year) {
+            if ($record->year && (int) $record->year !== now()->year) {
                 Log::warning('Enrollment: rejected — not current year program', $context);
                 Notification::make()
                     ->title('Enrollment Not Available')
