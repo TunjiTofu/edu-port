@@ -2,17 +2,21 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Widgets\Concerns\FiltersYearByEnrollment;
 use App\Models\Church;
 use App\Models\District;
 use App\Models\Submission;
 use App\Models\Task;
 use App\Models\Section;
+use App\Models\User;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
 
 class ChurchStatsWidget extends BaseWidget
 {
+    use FiltersYearByEnrollment;
+
     protected static ?int $sort = 1;
     protected static ?string $pollingInterval = '30s';
     protected int | string | array $columnSpan = 'full';
@@ -34,6 +38,10 @@ class ChurchStatsWidget extends BaseWidget
 
     protected function getStats(): array
     {
+        $year = $this->getSelectedYear();
+        $users = User::query();
+        $this->scopeUsersByYear($users, $year);
+
         // Get basic counts
         $totalChurches = Church::count();
         $activeChurches = Church::where('is_active', true)->count();

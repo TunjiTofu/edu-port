@@ -125,21 +125,23 @@ class UserResource extends Resource
                     Tables\Columns\Layout\Split::make([
 
                         // ── Avatar ─────────────────────────────────────────
-                        // FIX: Use the passport_photo_url accessor (which calls
-                        // Storage::disk('public')->url()) and pass disk(null) so
-                        // Filament treats the value as a ready-made URL rather than
-                        // trying to re-resolve it through the disk system.
-                        // This also means the defaultImageUrl is used correctly as a
-                        // plain URL fallback when the accessor returns the default.
-                        Tables\Columns\ImageColumn::make('passport_photo')
+                        // Render the photo as raw HTML <img> to bypass Filament's
+                        // disk/URL resolution entirely. Both disk('public') and
+                        // disk(null)+getStateUsing failed silently on this setup.
+                        // TextColumn->html() renders whatever string is returned
+                        // directly into the cell — the most reliable approach.
+                        Tables\Columns\TextColumn::make('photo')
                             ->label('')
-                            ->disk('public')
-                            ->defaultImageUrl(
-                                \Illuminate\Support\Facades\Storage::disk('public')
-                                    ->url('passport-photos/default-avatar.jpg')
-                            )
-                            ->circular()
-                            ->size(52)
+                            ->html()
+                            ->getStateUsing(function ($record) {
+                                $url      = $record?->passport_photo_url
+                                    ?? asset('storage/passport-photos/default-avatar.jpg');
+                                $fallback = asset('storage/passport-photos/default-avatar.jpg');
+                                return '<img src="' . e($url) . '" '
+                                    . 'onerror="this.onerror=null;this.src=\'' . $fallback . '\'" '
+                                    . 'class="user-photo ring-2 ring-amber-400/40 shadow-sm" '
+                                    . 'alt="Photo">';
+                            })
                             ->grow(false),
 
                         // ── Name + role badge + status badges ──────────────
@@ -150,7 +152,10 @@ class UserResource extends Resource
                                 Tables\Columns\TextColumn::make('name')
                                     ->weight('bold')
                                     ->searchable()
-                                    ->size(Tables\Columns\TextColumn\TextColumnSize::Medium),
+                                    ->size(Tables\Columns\TextColumn\TextColumnSize::Medium)
+                                    ->wrap()        // wrap instead of overflow
+                                    ->limit(40)     // truncate very long names with ellipsis
+                                    ->tooltip(fn ($record) => $record->name), // full name on hover
 
                                 Tables\Columns\TextColumn::make('role.name')
                                     ->badge()
@@ -235,6 +240,49 @@ class UserResource extends Resource
                 'xl'      => 3,
             ])
             ->filters([
+                // ── Year filter — defaults to current year ─────────────────
+                // "This year" shows:
+                //   1. Users who registered this calendar year (new cohort)
+                //   2. Users who registered in a previous year but are still
+                //      active (program_completed_at IS NULL) — continuing candidates
+                //
+                // This matches the admin's mental model: "who is working this year?"
+                // regardless of which program cohort they originally enrolled in.
+                Tables\Filters\SelectFilter::make('year')
+                    ->label('Program Year')
+                    ->options(function () {
+                        $currentYear = now()->year;
+                        $years = \App\Models\User::selectRaw('YEAR(created_at) as yr')
+                            ->distinct()->orderByDesc('yr')->pluck('yr')
+                            ->mapWithKeys(fn ($y) => [$y => (string) $y])
+                            ->toArray();
+                        $years[$currentYear] = (string) $currentYear;
+                        krsort($years);
+                        return ['' => 'All Years'] + $years;
+                    })
+                    ->default((string) now()->year)
+                    ->query(function (\Illuminate\Database\Eloquent\Builder $query, array $data) {
+                        $year = $data['value'] ?? null;
+                        if (! $year) return $query; // "All Years" selected
+
+                        $year = (int) $year;
+                        $currentYear = now()->year;
+
+                        return $query->where(function ($q) use ($year, $currentYear) {
+                            // Users who registered this year
+                            $q->whereYear('users.created_at', $year);
+
+                            // + active users from previous years (continuing cohort)
+                            if ($year === $currentYear) {
+                                $q->orWhere(function ($q2) use ($year) {
+                                    $q2->whereYear('users.created_at', '<', $year)
+                                        ->whereNull('program_completed_at')
+                                        ->whereNull('disqualified_at');
+                                });
+                            }
+                        });
+                    }),
+
                 TrashedFilter::make(),
                 SelectFilter::make('role')->relationship('role', 'name'),
                 SelectFilter::make('district')->relationship('district', 'name'),
