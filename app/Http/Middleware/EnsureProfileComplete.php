@@ -25,10 +25,13 @@ class EnsureProfileComplete
             return $next($request);
         }
 
-        // Routes that must remain accessible even with an incomplete profile
+        // Routes that must remain accessible even with an incomplete profile.
+        // IMPORTANT: 'change-password' must be here — ForcePasswordChange middleware
+        // redirects to change-password, and if EnsureProfileComplete then redirects
+        // away from it, the two middlewares create an infinite redirect loop.
         $skipPatterns = [
             'profile', 'edit', 'logout', 'login',
-            'livewire', '_', 'assets',
+            'change-password', 'livewire', '_', 'assets',
         ];
 
         foreach ($skipPatterns as $pattern) {
@@ -38,6 +41,13 @@ class EnsureProfileComplete
         }
 
         if ($user->isProfileComplete()) {
+            return $next($request);
+        }
+
+        // If the user hasn't changed their default password yet, ForcePasswordChange
+        // middleware will redirect them to change-password. Don't also redirect them
+        // to profile/edit — let the password change happen first.
+        if (is_null($user->password_updated_at)) {
             return $next($request);
         }
 
@@ -67,7 +77,7 @@ class EnsureProfileComplete
             ->title('Profile Incomplete')
             ->body("Please fill in the following before continuing: {$missingList}.")
             ->warning()
-            ->persistent() // stays until dismissed — a candidate must read it
+            ->persistent() // stays until dismissed — candidate must read it
             ->send();
 
         return redirect('/student/profiles/' . $user->id . '/edit');

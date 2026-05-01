@@ -15,7 +15,6 @@ class ForcePasswordChange
         $user = Filament::auth()->user();
 
         if (! $user) {
-            Log::warning('ForcePasswordChange: user not authenticated');
             return $next($request);
         }
 
@@ -25,7 +24,10 @@ class ForcePasswordChange
 
         $path = $request->path();
 
-        $skipPatterns = ['change-password', 'logout', 'login'];
+        // IMPORTANT: 'profile' and 'edit' must be here — EnsureProfileComplete
+        // redirects to the profile edit page, and if ForcePasswordChange then
+        // redirects away from it, the two middlewares create an infinite loop.
+        $skipPatterns = ['change-password', 'logout', 'login', 'profile', 'edit'];
 
         foreach ($skipPatterns as $pattern) {
             if (str_contains($path, $pattern)) {
