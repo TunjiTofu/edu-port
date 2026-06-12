@@ -29,12 +29,18 @@ class SubmissionResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->isReviewer();
+//        return Auth::user()?->isReviewer();
+        return false;
     }
 
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false; // hidden from sidebar — replaced by ReviewQueueResource
     }
 
     public static function getEloquentQuery(): Builder
