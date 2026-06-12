@@ -287,7 +287,7 @@ class ReviewWorkspace extends Page implements HasForms
 
                         Forms\Components\TextInput::make("rubric_{$rubric->id}")
                             ->label('Points')
-                            ->labelSrOnly()
+                            ->hiddenLabel()
                             ->numeric()
                             ->minValue(0)
                             ->maxValue((float) $rubric->max_points)
