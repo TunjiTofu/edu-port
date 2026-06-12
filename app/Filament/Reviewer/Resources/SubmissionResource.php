@@ -33,14 +33,14 @@ class SubmissionResource extends Resource
         return false;
     }
 
-    public static function canCreate(): bool
-    {
-        return false;
-    }
-
     public static function shouldRegisterNavigation(): bool
     {
         return false; // hidden from sidebar — replaced by ReviewQueueResource
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
     }
 
     public static function getEloquentQuery(): Builder
