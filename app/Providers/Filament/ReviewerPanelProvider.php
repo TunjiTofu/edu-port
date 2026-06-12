@@ -4,7 +4,6 @@ namespace App\Providers\Filament;
 
 use App\Filament\Reviewer\Pages\ChangePassword;
 use App\Filament\Reviewer\Resources\ChangePasswordResource;
-use App\Filament\Reviewer\Resources\Widgets\MyReviewsWidget;
 use App\Filament\Reviewer\Resources\Widgets\ReviewerStatsWidget;
 use App\Http\Middleware\EnsureUserIsReviewer;
 use App\Http\Middleware\ForcePasswordChange;
@@ -46,7 +45,6 @@ class ReviewerPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
                 ReviewerStatsWidget::class,
-                MyReviewsWidget::class
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -59,7 +57,6 @@ class ReviewerPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 ForcePasswordChange::class
-
             ])
             ->authMiddleware([
                 Authenticate::class,

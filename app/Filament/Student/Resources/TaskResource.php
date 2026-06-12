@@ -129,12 +129,12 @@ class TaskResource extends Resource
                                         ->formatStateUsing(function ($state, $record) {
                                             if (! $state) return '🗓 No deadline';
                                             $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-                                            $days = round(now()->diffInDays($c, false));
+                                            $days = now()->diffInDays($c, false);
                                             if ($record->submissions->isNotEmpty()) return '📤 Submitted';
                                             return match (true) {
                                                 $days < 0  => '🔴 Overdue — ' . $c->format('M j'),
                                                 $days == 0 => '⚠️ Due today',
-                                                $days <= 3 => "⚠️ {$days}days left",
+                                                $days <= 3 => "⚠️ {$days}d left",
                                                 default    => '📅 ' . $c->format('M j, Y'),
                                             };
                                         }),
@@ -216,17 +216,28 @@ class TaskResource extends Resource
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
 
-                // Resubmit — only while pending_review (not yet picked up by a reviewer)
+                // Resubmit — while pending_review (not yet picked up) OR needs_revision
+                // (reviewer sent it back for changes)
                 Tables\Actions\Action::make('resubmit')
-                    ->label('Resubmit')
-                    ->icon('heroicon-o-arrow-path')
-                    ->button()->color('warning')
-                    ->visible(fn ($record) =>
-                        $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
+                    ->label(fn ($record) =>
+                    $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
+                        ? 'Resubmit (Revision Requested)'
+                        : 'Resubmit'
                     )
+                    ->icon('heroicon-o-arrow-path')
+                    ->button()
+                    ->color(fn ($record) =>
+                    $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
+                        ? 'danger'
+                        : 'warning'
+                    )
+                    ->visible(fn ($record) => in_array(
+                        $record->submissions->first()?->status,
+                        [SubmissionTypes::PENDING_REVIEW->value, SubmissionTypes::NEEDS_REVISION->value]
+                    ))
                     ->requiresConfirmation()
                     ->modalHeading('Replace Your Submission?')
-                    ->modalDescription('Resubmitting will replace your current file. Your previous submission will be deleted. You can only do this while the task is still awaiting review.')
+                    ->modalDescription('Resubmitting will replace your current file. Your previous submission will be deleted. You can only do this while the task is still awaiting review or needs revision.')
                     ->modalSubmitActionLabel('Yes, Replace Submission')
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleResubmission($record, $data)),
@@ -340,17 +351,27 @@ class TaskResource extends Resource
                             Infolists\Components\TextEntry::make('submissions.0.review.comments')
                                 ->label('Reviewer Comments')->prose()->columnSpanFull()
                                 ->visible(fn ($record) =>
-                                    ! empty($record->submissions->first()?->review?->comments) &&
-                                    $record->isResultPublished()
+                                    ! empty($record->submissions->first()?->review?->comments) && (
+                                        $record->isResultPublished() ||
+                                        $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
+                                    )
                                 ),
 
-                            // Resubmit notice
+                            // Resubmit notices
                             Infolists\Components\TextEntry::make('resubmit_note')
                                 ->label('')
                                 ->state('⚠️ Your submission is awaiting review. You may replace it until a reviewer picks it up.')
                                 ->color('warning')
                                 ->visible(fn ($record) =>
                                     $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
+                                ),
+
+                            Infolists\Components\TextEntry::make('needs_revision_note')
+                                ->label('')
+                                ->state('✏️ Your reviewer has requested changes — see the comments above. Use "Resubmit (Revision Requested)" below to upload your revised work.')
+                                ->color('danger')
+                                ->visible(fn ($record) =>
+                                    $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
                                 ),
                         ])->visible(fn ($record) =>
                         $record->submissions->where('student_id', Auth::id())->isNotEmpty()
@@ -373,16 +394,16 @@ class TaskResource extends Resource
                             ->label('Upload Your Work')
                             ->acceptedFileTypes([
                                 'application/pdf',
-//                                'application/msword',
-//                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'application/msword',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                             ])
-                            ->maxSize(10240)
+                            ->maxSize(5120)  // 5 MB
                             ->required()
                             ->directory('submissions/temp')
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF — max 2 MB'),
+                            ->helperText('PDF, DOC or DOCX — max 5 MB'),
 
                         Textarea::make('notes')
                             ->label('Notes for your Reviewer (Optional)')
@@ -499,9 +520,11 @@ class TaskResource extends Resource
     }
 
     /**
-     * Replace an existing PENDING_REVIEW submission with a new file.
+     * Replace an existing PENDING_REVIEW or NEEDS_REVISION submission with a new file.
      * The old file is deleted from storage and the submission record is updated.
-     * This is blocked at the UI level once the status changes from pending_review.
+     * If the submission was sent back for revision, the associated Review is
+     * unlocked (is_completed reset to false) so the same reviewer can re-score
+     * it once the candidate resubmits.
      */
     public static function handleResubmission(Task $record, array $data): void
     {
@@ -533,7 +556,10 @@ class TaskResource extends Resource
 
         $existing = Submission::where('task_id', $record->id)
             ->where('student_id', Auth::id())
-            ->where('status', SubmissionTypes::PENDING_REVIEW->value)
+            ->whereIn('status', [
+                SubmissionTypes::PENDING_REVIEW->value,
+                SubmissionTypes::NEEDS_REVISION->value,
+            ])
             ->first();
 
         if (! $existing) {
@@ -558,6 +584,8 @@ class TaskResource extends Resource
                 $data, $record, isResubmit: true, existingSubmission: $existing
             );
 
+            $wasNeedsRevision = $existing->status === SubmissionTypes::NEEDS_REVISION->value;
+
             $existing->update([
                 'file_name'     => $fileDetails['file_name'],
                 'file_path'     => $fileDetails['file_path'],
@@ -567,6 +595,22 @@ class TaskResource extends Resource
                 'submitted_at'  => now(),
                 'status'        => SubmissionTypes::PENDING_REVIEW->value,
             ]);
+
+            // If this was sent back for revision, unlock the existing review
+            // so the same reviewer can re-score it. The reviewer's previous
+            // score/comments remain visible as a starting point but the form
+            // becomes editable again (isLocked() checks is_completed).
+            if ($wasNeedsRevision && $existing->review) {
+                $existing->review->update([
+                    'is_completed' => false,
+                ]);
+
+                Log::info('Resubmission: review unlocked for re-scoring', [
+                    'event'         => 'resubmission_review_unlocked',
+                    'submission_id' => $existing->id,
+                    'review_id'     => $existing->review->id,
+                ]);
+            }
 
             Log::info('Resubmission: success', array_merge($context, ['event' => 'resubmission_success']));
 

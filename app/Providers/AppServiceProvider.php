@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Review;
+use App\Models\Submission;
+use App\Observers\ReviewObserver;
+use App\Observers\SubmissionObserver;
 use Filament\Http\Responses\Auth\Contracts\LogoutResponse as LogoutResponseContract;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -32,6 +36,17 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // ── Submission status observer ──────────────────────────────────────
+        // Sends an email to the candidate whenever a submission's status
+        // transitions to 'needs_revision', regardless of which panel/UI
+        // triggered the change.
+        Submission::observe(SubmissionObserver::class);
+
+        // ── Reviewer assignment observer ────────────────────────────────────
+        // Emails reviewers when assigned a new submission, and emails the
+        // previous reviewer when a submission is reassigned away from them.
+        Review::observe(ReviewObserver::class);
+
         // ── cPanel SMTP fix ────────────────────────────────────────────────
         $this->forceCpanelMailConfig();
 

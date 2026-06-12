@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modification Request — {{ $portalName }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6; color: #111827; }
+        .wrapper { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+        .header { background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); padding: 40px 32px; text-align: center; }
+        .header h1 { color: #fff; font-size: 24px; font-weight: 700; margin-top: 12px; }
+        .header p { color: rgba(255,255,255,.9); margin-top: 6px; font-size: 14px; }
+        .body { padding: 36px 32px; }
+        .greeting { font-size: 20px; font-weight: 600; color: #111827; margin-bottom: 16px; }
+        .text { color: #4b5563; line-height: 1.7; margin-bottom: 16px; font-size: 15px; }
+        .card { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 20px 24px; margin: 24px 0; }
+        .card p { margin-bottom: 6px; font-size: 14px; color: #374151; }
+        .card strong { color: #111827; }
+        .reason {
+            background: #f9fafb; border-left: 4px solid #8b5cf6; border-radius: 0 8px 8px 0;
+            padding: 16px 20px; margin: 20px 0; font-size: 14px; color: #374151; line-height: 1.7;
+            font-style: italic;
+        }
+        .btn-wrap { text-align: center; margin: 32px 0; }
+        .btn { display: inline-block; background: #8b5cf6; color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-weight: 600; font-size: 15px; letter-spacing: .3px; }
+        .divider { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+        .footer { background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 24px 32px; text-align: center; }
+        .footer p { color: #9ca3af; font-size: 12px; line-height: 1.6; }
+        @media (max-width: 480px) {
+            .wrapper { margin: 0; border-radius: 0; }
+            .header { padding: 28px 20px; }
+            .body { padding: 24px 20px; }
+            .footer { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <div class="header">
+        <div style="font-size:48px;">🔓</div>
+        <h1>Modification Request</h1>
+        <p>A reviewer would like to revise a completed review</p>
+    </div>
+    <div class="body">
+        <p class="greeting">Hello, Admin 👋</p>
+        <p class="text">
+            <strong>{{ $reviewerName }}</strong> has requested permission to modify a review
+            that has already been completed and locked.
+        </p>
+
+        <div class="card">
+            <p><strong>👤 Candidate:</strong> {{ $candidateName }}</p>
+            <p><strong>📝 Task:</strong> {{ $taskTitle }}</p>
+            @if ($sectionName)
+                <p><strong>📂 Section:</strong> {{ $sectionName }}</p>
+            @endif
+            @if ($currentScore !== null)
+                <p><strong>📊 Current Score:</strong> {{ $currentScore }}</p>
+            @endif
+        </div>
+
+        <p class="text" style="margin-bottom: 8px;"><strong>Reviewer's Reason:</strong></p>
+        <div class="reason">
+            "{{ $reason }}"
+        </div>
+
+        <p class="text">
+            If you approve this request, the reviewer will be able to update the score
+            and feedback for this submission one time.
+        </p>
+
+        <div class="btn-wrap">
+            <a href="{{ $reviewUrl }}" class="btn">Review Request →</a>
+        </div>
+
+        <hr class="divider">
+
+        <p class="text" style="font-size: 13px; color: #9ca3af;">
+            This request is pending until an admin approves or rejects it.
+        </p>
+    </div>
+    <div class="footer">
+        <p>This is an automated message from {{ $portalName }}.</p>
+        <p>&copy; {{ date('Y') }} {{ $portalName }}. All rights reserved.</p>
+    </div>
+</div>
+</body>
+</html>
