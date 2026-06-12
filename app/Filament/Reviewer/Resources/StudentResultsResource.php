@@ -35,8 +35,14 @@ class StudentResultsResource extends Resource
 
     public static function canViewAny(): bool
     {
-        $user = Auth::user();
-        return $user && $user->isReviewer();
+        return false;
+//        $user = Auth::user();
+//        return $user && $user->isReviewer();
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false; // hidden from sidebar — replaced by ReviewQueueResource
     }
 
     public static function form(Form $form): Form

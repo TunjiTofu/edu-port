@@ -259,6 +259,56 @@ class SubmissionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
+
+                // ── Quick Assign/Reassign Reviewer ──────────────────────────
+                // A focused modal for assigning a reviewer without opening the
+                // full edit form. Creates a Review record if none exists yet,
+                // or updates the existing one.
+                Tables\Actions\Action::make('assign_reviewer')
+                    ->label(fn (Submission $record) => $record->review?->reviewer_id ? 'Reassign' : 'Assign')
+                    ->icon('heroicon-o-user-plus')
+                    ->color(fn (Submission $record) => $record->review?->reviewer_id ? 'warning' : 'success')
+                    ->iconButton()
+                    ->tooltip(fn (Submission $record) =>
+                    $record->review?->reviewer_id ? 'Reassign Reviewer' : 'Assign Reviewer'
+                    )
+                    ->form([
+                        Forms\Components\Select::make('reviewer_id')
+                            ->label('Reviewer')
+                            ->options(fn () =>
+                            User::where('role_id', Role::where('name', RoleTypes::REVIEWER->value)->first()?->id)
+                                ->where('is_active', true)
+                                ->pluck('name', 'id')
+                            )
+                            ->searchable()
+                            ->required()
+                            ->default(fn (Submission $record) => $record->review?->reviewer_id),
+                    ])
+                    ->action(function (Submission $record, array $data) {
+                        $review = $record->review;
+
+                        if ($review) {
+                            $review->update(['reviewer_id' => $data['reviewer_id']]);
+                        } else {
+                            $review = Review::create([
+                                'submission_id' => $record->id,
+                                'reviewer_id'   => $data['reviewer_id'],
+                            ]);
+                        }
+
+                        // Move submission into "under review" if it was pending
+                        if ($record->status === SubmissionTypes::PENDING_REVIEW->value) {
+                            $record->update(['status' => SubmissionTypes::UNDER_REVIEW->value]);
+                        }
+
+                        $reviewerName = User::find($data['reviewer_id'])?->name;
+
+                        Notification::make()
+                            ->title('Reviewer Assigned')
+                            ->body("Submission assigned to {$reviewerName}.")
+                            ->success()->send();
+                    }),
+
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
                 Tables\Actions\ForceDeleteAction::make(),
@@ -268,6 +318,48 @@ class SubmissionResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                     Tables\Actions\RestoreBulkAction::make(),
+
+                    // ── Bulk assign reviewer ────────────────────────────────
+                    Tables\Actions\BulkAction::make('bulk_assign_reviewer')
+                        ->label('Assign Reviewer')
+                        ->icon('heroicon-o-user-plus')
+                        ->color('success')
+                        ->form([
+                            Forms\Components\Select::make('reviewer_id')
+                                ->label('Reviewer')
+                                ->options(fn () =>
+                                User::where('role_id', Role::where('name', RoleTypes::REVIEWER->value)->first()?->id)
+                                    ->where('is_active', true)
+                                    ->pluck('name', 'id')
+                                )
+                                ->searchable()
+                                ->required(),
+                        ])
+                        ->action(function ($records, array $data) {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                $review = $record->review;
+                                if ($review) {
+                                    $review->update(['reviewer_id' => $data['reviewer_id']]);
+                                } else {
+                                    Review::create([
+                                        'submission_id' => $record->id,
+                                        'reviewer_id'   => $data['reviewer_id'],
+                                    ]);
+                                }
+                                if ($record->status === SubmissionTypes::PENDING_REVIEW->value) {
+                                    $record->update(['status' => SubmissionTypes::UNDER_REVIEW->value]);
+                                }
+                                $count++;
+                            }
+
+                            $reviewerName = User::find($data['reviewer_id'])?->name;
+                            Notification::make()
+                                ->title('Reviewer Assigned')
+                                ->body("{$count} submission(s) assigned to {$reviewerName}.")
+                                ->success()->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }
