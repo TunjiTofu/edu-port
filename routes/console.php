@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 // Every Friday at 6:00 PM Nigeria time (WAT = UTC+1).
 // Emails all active reviewers who have pending/under-review submissions.
 Schedule::command('reviewer:send-weekly-reminders')
-    ->weeklyOn(5, '18:00')          // 5 = Friday
+    ->weeklyOn(5, '21:00')          // 5 = Friday
     ->timezone('Africa/Lagos')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
