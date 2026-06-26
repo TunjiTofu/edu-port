@@ -432,25 +432,27 @@ class SubmissionResource extends Resource
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->iconButton()
+                    ->tooltip('View'),
+
+                Tables\Actions\EditAction::make()
+                    ->iconButton()
+                    ->tooltip('Edit'),
+
                 Tables\Actions\Action::make('download')
-                    ->label('Download')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('primary')
-                    ->url(function (Submission $record) {
-                        return $record ? static::getDownloadUrl($record) : null;
-                    })
-//                    ->openUrlInNewTab(),
-//                    ->url(fn(Submission $record) => $record->file_path . '/' . $record->file_name)
+                    ->iconButton()
+                    ->tooltip('Download File')
+                    ->url(fn (Submission $record) => $record ? static::getDownloadUrl($record) : null)
                     ->openUrlInNewTab(),
-                // ->visible(fn(Submission $record) => $record->file_path. '/' . $record->file_name && file_exists(public_path($record->file_path . '/' . $record->file_name))),
 
                 Tables\Actions\Action::make('assign_reviewer')
-                    ->label('Assign Reviewer')
                     ->icon('heroicon-o-user-plus')
                     ->color('warning')
+                    ->iconButton()
+                    ->tooltip(fn (?Submission $record) => $record?->review?->reviewer_id ? 'Reassign Reviewer' : 'Assign Reviewer')
                     ->form([
                         Forms\Components\Select::make('review.reviewer_id')
                             ->label('Select Reviewer')
@@ -474,14 +476,13 @@ class SubmissionResource extends Resource
                             ->title('Reviewer assigned successfully')
                             ->success()->send();
                     })
-                    ->visible(function (Submission $record) {
-                        return $record->status !== SubmissionTypes::COMPLETED->value;
-                    }),
+                    ->visible(fn (?Submission $record) => $record?->status !== SubmissionTypes::COMPLETED->value),
 
                 Tables\Actions\Action::make('override_score')
-                    ->label('Override Score')
                     ->icon('heroicon-o-pencil-square')
                     ->color('danger')
+                    ->iconButton()
+                    ->tooltip('Override Score')
                     ->form([
                         Forms\Components\TextInput::make('score')
                             ->label('New Score')
@@ -489,62 +490,253 @@ class SubmissionResource extends Resource
                             ->required()
                             ->minValue(0)
                             ->maxValue(10)
-                            ->default(function (?Submission $record) {
-                                return $record->review?->score ?? 10;
-                            })
-                            ->rules([
-                                'numeric',
-                                'min:0',
-                                'max:10',
-                            ]),
+                            ->default(fn (?Submission $record) => $record?->review?->score ?? 10)
+                            ->rules(['numeric', 'min:0', 'max:10']),
                         Forms\Components\Textarea::make('override_reason')
                             ->label('Override Reason')
                             ->required()
                             ->rows(3),
                     ])
                     ->action(function (Submission $record, array $data) {
-
-                        // Update the related Review
                         $record->review()->updateOrCreate(
                             ['submission_id' => $record->id],
                             [
-                                'score' => $data['score'],
-                                'is_completed' => true,
-                                'admin_override' => true,
+                                'score'           => $data['score'],
+                                'is_completed'    => true,
+                                'admin_override'  => true,
                                 'override_reason' => $data['override_reason'],
-                                'overridden_by' => Auth::user()->id,
-                                'overridden_at' => now()
+                                'overridden_by'   => Auth::user()->id,
+                                'overridden_at'   => now(),
                             ],
                         );
-
-                        // Update the Submission status
-                        $record->update([
-                            'status' => SubmissionTypes::COMPLETED->value,
-                        ]);
+                        $record->update(['status' => SubmissionTypes::COMPLETED->value]);
                     }),
-                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
-                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
+
+                Tables\Actions\DeleteAction::make()
+                    ->iconButton()
+                    ->tooltip('Delete'),
+
+                Tables\Actions\ForceDeleteAction::make()
+                    ->iconButton()
+                    ->tooltip('Permanently Delete'),
+
+                Tables\Actions\RestoreAction::make()
+                    ->iconButton()
+                    ->tooltip('Restore'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                     Tables\Actions\RestoreBulkAction::make(),
 
-                    // ── Bulk assign reviewer with workload display ─────────────
-                    // Sends ONE summary email to the reviewer (not one per submission).
-                    // Uses updateQuietly() to skip individual ReviewObserver events
-                    // so the single summary email is the only notification sent.
+                    // ── Step 1: Run this first to see conflict percentages ──────
+                    Tables\Actions\BulkAction::make('conflict_report')
+                        ->label('Reviewer Conflict Report')
+                        ->icon('heroicon-o-shield-exclamation')
+                        ->color('warning')
+                        ->modalHeading('Reviewer Conflict Analysis')
+                        ->modalDescription('Shows how many of the selected candidates share a church or district with each reviewer. Use this to make unbiased assignment decisions.')
+                        ->modalSubmitActionLabel('Close')
+                        ->form([
+                            Forms\Components\Placeholder::make('conflict_table')
+                                ->label('')
+                                ->content(function ($livewire) {
+                                    $selectedIds = collect($livewire->selectedTableRecords ?? []);
+
+                                    if ($selectedIds->isEmpty()) {
+                                        return new \Illuminate\Support\HtmlString(
+                                            '<p class="text-gray-500 text-sm">No submissions selected.</p>'
+                                        );
+                                    }
+
+                                    // Get the candidates for the selected submissions
+                                    $candidates = \App\Models\Submission::whereIn('id', $selectedIds)
+                                        ->with('student')
+                                        ->get()
+                                        ->map(fn ($s) => $s->student)
+                                        ->filter();
+
+                                    $total           = $candidates->count();
+                                    $churchIds       = $candidates->pluck('church_id')->filter()->countBy()->toArray();
+                                    $districtIds     = $candidates->pluck('district_id')->filter()->countBy()->toArray();
+
+                                    // Get all active reviewers with workload
+                                    $reviewerRoleId = \App\Models\Role::where('name', RoleTypes::REVIEWER->value)->value('id');
+
+                                    $reviewers = User::where('role_id', $reviewerRoleId)
+                                        ->where('is_active', true)
+                                        ->with(['church', 'district'])
+                                        ->withCount(['reviews as pending_count' => fn ($q) =>
+                                        $q->whereHas('submission', fn ($s) =>
+                                        $s->whereIn('status', [
+                                            SubmissionTypes::PENDING_REVIEW->value,
+                                            SubmissionTypes::UNDER_REVIEW->value,
+                                        ])
+                                        )
+                                        ])
+                                        ->get()
+                                        ->map(function ($r) use ($churchIds, $districtIds, $total) {
+                                            $churchConflicts   = $churchIds[$r->church_id]   ?? 0;
+                                            $districtConflicts = $districtIds[$r->district_id] ?? 0;
+                                            $churchPct         = $total > 0 ? round(($churchConflicts / $total) * 100) : 0;
+                                            $districtPct       = $total > 0 ? round(($districtConflicts / $total) * 100) : 0;
+
+                                            $riskLevel = match (true) {
+                                                $churchPct >= 50                          => 'high',
+                                                $churchPct > 0 || $districtPct >= 30      => 'medium',
+                                                $districtPct > 0                          => 'low',
+                                                default                                   => 'none',
+                                            };
+
+                                            return [
+                                                'name'             => $r->name,
+                                                'church'           => $r->church?->name ?? '—',
+                                                'district'         => $r->district?->name ?? '—',
+                                                'pending'          => $r->pending_count,
+                                                'church_conflicts' => $churchConflicts,
+                                                'church_pct'       => $churchPct,
+                                                'district_conflicts' => $districtConflicts,
+                                                'district_pct'     => $districtPct,
+                                                'risk'             => $riskLevel,
+                                            ];
+                                        })
+                                        ->sortBy('church_pct'); // safest reviewers first
+
+                                    $rows = $reviewers->map(function ($r) use ($total) {
+                                        [$riskIcon, $riskColor, $riskLabel] = match ($r['risk']) {
+                                            'high'   => ['🔴', '#dc2626', 'High'],
+                                            'medium' => ['🟡', '#d97706', 'Medium'],
+                                            'low'    => ['🟢', '#16a34a', 'Low'],
+                                            default  => ['✅', '#16a34a', 'None'],
+                                        };
+
+                                        $churchBar = $r['church_pct'] > 0
+                                            ? '<div style="background:#fee2e2;border-radius:4px;overflow:hidden;height:6px;margin-top:4px;">
+                                                 <div style="background:#dc2626;width:' . $r['church_pct'] . '%;height:6px;"></div>
+                                               </div>'
+                                            : '';
+
+                                        $districtBar = $r['district_pct'] > 0
+                                            ? '<div style="background:#fef3c7;border-radius:4px;overflow:hidden;height:6px;margin-top:4px;">
+                                                 <div style="background:#d97706;width:' . $r['district_pct'] . '%;height:6px;"></div>
+                                               </div>'
+                                            : '';
+
+                                        return '
+                                            <tr>
+                                                <td style="padding:10px 12px;font-weight:600;font-size:13px;">' . e($r['name']) . '
+                                                    <div style="font-size:11px;color:#9ca3af;font-weight:400;">' . e($r['church']) . ' · ' . e($r['district']) . '</div>
+                                                </td>
+                                                <td style="padding:10px 12px;text-align:center;font-size:13px;">' . $r['pending'] . '</td>
+                                                <td style="padding:10px 12px;">
+                                                    <div style="font-size:13px;font-weight:600;color:' . ($r['church_pct'] > 0 ? '#dc2626' : '#16a34a') . ';">
+                                                        ' . $r['church_conflicts'] . '/' . $total . ' (' . $r['church_pct'] . '%)
+                                                    </div>' . $churchBar . '
+                                                </td>
+                                                <td style="padding:10px 12px;">
+                                                    <div style="font-size:13px;font-weight:600;color:' . ($r['district_pct'] > 0 ? '#d97706' : '#16a34a') . ';">
+                                                        ' . $r['district_conflicts'] . '/' . $total . ' (' . $r['district_pct'] . '%)
+                                                    </div>' . $districtBar . '
+                                                </td>
+                                                <td style="padding:10px 12px;text-align:center;">
+                                                    <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;
+                                                        background:' . ($r['risk'] === 'none' ? '#f0fdf4' : ($r['risk'] === 'high' ? '#fef2f2' : ($r['risk'] === 'medium' ? '#fffbeb' : '#f0fdf4'))) . ';
+                                                        color:' . $riskColor . ';font-size:12px;font-weight:600;">
+                                                        ' . $riskIcon . ' ' . $riskLabel . '
+                                                    </span>
+                                                </td>
+                                            </tr>';
+                                    })->implode('');
+
+                                    $summary = '<div style="margin-bottom:16px;padding:12px 16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;font-size:13px;color:#374151;">
+                                        <strong>' . $total . ' candidate(s) selected</strong> from
+                                        <strong>' . count($churchIds) . ' church(es)</strong> across
+                                        <strong>' . count($districtIds) . ' district(s)</strong>.
+                                        Reviewers with 0% church conflict are the safest choice.
+                                    </div>';
+
+                                    return new \Illuminate\Support\HtmlString($summary . '
+                                        <div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;">
+                                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                                <thead>
+                                                    <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+                                                        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#374151;">Reviewer</th>
+                                                        <th style="padding:10px 12px;text-align:center;font-weight:600;color:#374151;">⏳ Pending</th>
+                                                        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#dc2626;">⛪ Same Church</th>
+                                                        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#d97706;">🏘 Same District</th>
+                                                        <th style="padding:10px 12px;text-align:center;font-weight:600;color:#374151;">Risk</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>' . $rows . '</tbody>
+                                            </table>
+                                        </div>
+                                        <p style="margin-top:12px;font-size:12px;color:#9ca3af;">
+                                            ✅ None = no overlap · 🟢 Low = district only · 🟡 Medium = some church overlap · 🔴 High = majority same church
+                                        </p>
+                                    ');
+                                }),
+                        ])
+                        ->action(fn () => null) // report only — no side effects
+                        ->deselectRecordsAfterCompletion(false),
+
+                    // ── Step 2: Assign after reviewing the conflict report ──────
                     Tables\Actions\BulkAction::make('bulk_assign_reviewer')
                         ->label('Assign Reviewer')
                         ->icon('heroicon-o-user-plus')
                         ->color('success')
                         ->form([
+                            // Live conflict summary for the selected reviewer
+                            Forms\Components\Placeholder::make('conflict_hint')
+                                ->label('')
+                                ->content(function ($livewire, $get) {
+                                    $reviewerId  = $get('reviewer_id');
+                                    $selectedIds = collect($livewire->selectedTableRecords ?? []);
+
+                                    if (! $reviewerId || $selectedIds->isEmpty()) {
+                                        return new \Illuminate\Support\HtmlString(
+                                            '<p style="font-size:12px;color:#9ca3af;">Select a reviewer to see their conflict profile against the selected candidates.</p>'
+                                        );
+                                    }
+
+                                    $reviewer = User::find($reviewerId);
+
+                                    $candidates = \App\Models\Submission::whereIn('id', $selectedIds)
+                                        ->with('student')
+                                        ->get()
+                                        ->map(fn ($s) => $s->student)
+                                        ->filter();
+
+                                    $total           = $candidates->count();
+                                    $churchConflicts = $candidates->where('church_id', $reviewer?->church_id)->count();
+                                    $districtConflicts = $candidates->where('district_id', $reviewer?->district_id)->count();
+                                    $churchPct       = $total > 0 ? round(($churchConflicts / $total) * 100) : 0;
+                                    $districtPct     = $total > 0 ? round(($districtConflicts / $total) * 100) : 0;
+
+                                    [$bg, $border, $icon, $label] = match (true) {
+                                        $churchPct >= 50  => ['#fef2f2', '#fecaca', '🔴', 'High conflict — consider a different reviewer'],
+                                        $churchPct > 0    => ['#fffbeb', '#fde68a', '🟡', 'Some church overlap — review carefully'],
+                                        $districtPct > 0  => ['#fff7ed', '#fed7aa', '🟠', 'Same district — low conflict risk'],
+                                        default           => ['#f0fdf4', '#bbf7d0', '✅', 'No church or district conflict — good choice'],
+                                    };
+
+                                    return new \Illuminate\Support\HtmlString('
+                                        <div style="padding:12px 16px;background:' . $bg . ';border:1px solid ' . $border . ';border-radius:8px;font-size:13px;">
+                                            <div style="font-weight:600;margin-bottom:6px;">' . $icon . ' ' . $label . '</div>
+                                            <div style="color:#374151;">
+                                                ⛪ Church conflicts: <strong>' . $churchConflicts . '/' . $total . ' (' . $churchPct . '%)</strong> &nbsp;&nbsp;
+                                                🏘 District conflicts: <strong>' . $districtConflicts . '/' . $total . ' (' . $districtPct . '%)</strong>
+                                            </div>
+                                        </div>
+                                    ');
+                                }),
+
                             Forms\Components\Select::make('reviewer_id')
                                 ->label('Select Reviewer')
-                                ->helperText('Reviewers shown with their current pending workload — sorted lightest first.')
+                                ->helperText('Sorted by lowest pending workload. Run "Conflict Report" first to check church/district overlaps.')
                                 ->options(fn () => static::reviewerOptionsWithWorkload())
                                 ->searchable()
-                                ->required(),
+                                ->required()
+                                ->live(), // triggers conflict_hint to refresh
                         ])
                         ->action(function (Collection $records, array $data) {
                             $reviewerId       = $data['reviewer_id'];
