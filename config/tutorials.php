@@ -85,7 +85,8 @@ return [
         'group_label' => 'Reviewers',
         'title'       => 'How to Review Submissions',
         'description' => 'A guide for reviewers on accessing submissions, scoring with rubrics, and leaving feedback.',
-        'youtube_url' => 'https://www.youtube.com/watch?v=uHr8dQ9ReYM&list=PLNbmjXHgczk6bWh-sGumRvjPUkwtyHz6R&index=9',
+//        'youtube_url' => 'https://www.youtube.com/watch?v=uHr8dQ9ReYM&list=PLNbmjXHgczk6bWh-sGumRvjPUkwtyHz6R&index=9',
+        'youtube_url' => 'https://youtu.be/AnQzptuwteE',
         'duration'    => '21:18',
     ],
 //    [
