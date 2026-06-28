@@ -2,190 +2,155 @@
 
 namespace App\Filament\Widgets;
 
-use App\Models\District;
+use App\Filament\Widgets\Concerns\FiltersYearByEnrollment;
 use App\Models\Church;
-use App\Models\User;
+use App\Models\District;
 use Filament\Widgets\ChartWidget;
 
 class StudentDistributionChart extends ChartWidget
 {
-    protected static ?string $heading = 'Student Distribution by Church';
-    protected static ?int $sort = 2;
-    protected int | string | array $columnSpan = 'full';
-    protected static ?string $maxHeight = '400px';
-    protected static bool $isLazy = true; // Lazy loading
+    use FiltersYearByEnrollment;
 
-    public ?string $filter = 'district';
+    protected static ?int    $sort            = 2;
+    protected int|string|array $columnSpan    = 'full';
+    protected static ?string $maxHeight       = '400px';
+    protected static bool    $isLazy          = true;
+
+    // "group_church" / "group_district" are grouping toggles.
+    // Everything else is a year/program scope from the trait.
+    public ?string $filter = null;
+
+    /**
+     * Separate property for grouping — so we can have a year filter
+     * AND a church/district toggle independently.
+     * Default to district grouping.
+     */
+    public string $groupBy = 'district';
 
     protected function getFilters(): ?array
     {
+        // Merge grouping options + year/program options
         return [
-            'church' => 'By Church',
-            'district' => 'By District',
-        ];
+                'group_church'   => '⛪ Group by Church',
+                'group_district' => '🏘 Group by District',
+            ] + static::widgetFilterOptions();
+    }
+
+    public function getHeading(): string
+    {
+        $scope = $this->getFilterLabel();
+        $group = $this->groupBy === 'church' ? 'Church' : 'District';
+        return "Student Distribution by {$group} — {$scope}";
     }
 
     protected function getData(): array
     {
-        $filter = $this->filter;
-
-        if ($filter === 'district') {
+        // Handle grouping toggle options separately
+        if ($this->filter === 'group_church') {
+            $this->groupBy = 'church';
+            return $this->getChurchData();
+        }
+        if ($this->filter === 'group_district') {
+            $this->groupBy = 'district';
             return $this->getDistrictData();
         }
 
-        return $this->getChurchData();
+        // Year/program filter — keep current groupBy, scope the data
+        return $this->groupBy === 'church'
+            ? $this->getChurchData()
+            : $this->getDistrictData();
     }
 
     private function getChurchData(): array
     {
-        // Get student count by church (assuming students are users with specific role or criteria)
-        // Adjust the query based on how you identify students in your system
-        $churchData = Church::withCount(['users' => function ($query) {
-            // Add any conditions here to filter only students
-            // For example: $query->where('role', 'student');
-            // Or: $query->whereHas('roles', function($q) { $q->where('name', 'student'); });
+        // Get scoped user IDs so withCount respects the year/program filter
+        $scopedIds = $this->getIsGroupingFilter()
+            ? null
+            : $this->scopedUserIds();
+
+        $churchData = Church::withCount(['users' => function ($q) use ($scopedIds) {
+            if ($scopedIds !== null) {
+                $q->whereIn('users.id', $scopedIds);
+            }
         }])
             ->where('is_active', true)
-            ->orderBy('users_count', 'desc')
-            ->take(10) // Limit to top 10 churches
+            ->orderByDesc('users_count')
+            ->take(10)
             ->get();
 
-        // Create labels with church names and student counts
-        $labels = $churchData->map(function ($church) {
-            return $church->name . ' (' . $church->users_count . ')';
-        })->toArray();
-
         return [
-            'datasets' => [
-                [
-                    'label' => 'Students',
-                    'data' => $churchData->pluck('users_count')->toArray(),
-                    'backgroundColor' => [
-                        'rgb(59, 130, 246)',   // Blue
-                        'rgb(16, 185, 129)',   // Green
-                        'rgb(245, 158, 11)',   // Yellow
-                        'rgb(239, 68, 68)',    // Red
-                        'rgb(139, 92, 246)',   // Purple
-                        'rgb(236, 72, 153)',   // Pink
-                        'rgb(20, 184, 166)',   // Teal
-                        'rgb(251, 146, 60)',   // Orange
-                        'rgb(156, 163, 175)',  // Gray
-                        'rgb(34, 197, 94)',    // Emerald
-                    ],
-                    'borderColor' => 'rgb(255, 255, 255)',
-                    'borderWidth' => 2,
-                ],
-            ],
-            'labels' => $labels,
+            'datasets' => [[
+                'label'           => 'Students',
+                'data'            => $churchData->pluck('users_count')->toArray(),
+                'backgroundColor' => $this->palette(),
+                'borderColor'     => 'rgb(255,255,255)',
+                'borderWidth'     => 2,
+            ]],
+            'labels' => $churchData->map(fn ($c) => $c->name . ' (' . $c->users_count . ')')->toArray(),
         ];
     }
 
     private function getDistrictData(): array
     {
-        // Get student count by district
-        $districtData = District::withCount(['churches' => function ($query) {
-            $query->where('is_active', true);
+        $scopedIds = $this->getIsGroupingFilter()
+            ? null
+            : $this->scopedUserIds();
+
+        $districtData = District::with(['churches' => function ($q) use ($scopedIds) {
+            $q->where('is_active', true)->withCount(['users' => function ($q2) use ($scopedIds) {
+                if ($scopedIds !== null) {
+                    $q2->whereIn('users.id', $scopedIds);
+                }
+            }]);
         }])
-            ->with(['churches' => function ($query) {
-                $query->where('is_active', true)->withCount('users');
-            }])
-            ->orderBy('name')
             ->get()
-            ->map(function ($district) {
-                $totalStudents = $district->churches->sum('users_count');
-                return [
-                    'name' => $district->name,
-                    'students_count' => $totalStudents,
-                ];
-            })
-            ->sortByDesc('students_count')
+            ->map(fn ($d) => [
+                'name'   => $d->name,
+                'count'  => $d->churches->sum('users_count'),
+            ])
+            ->sortByDesc('count')
             ->take(10)
             ->values();
 
-        // Create labels with district names and student counts
-        $labels = $districtData->map(function ($district) {
-            return $district['name'] . ' (' . $district['students_count'] . ')';
-        })->toArray();
-
         return [
-            'datasets' => [
-                [
-                    'label' => 'Students',
-                    'data' => $districtData->pluck('students_count')->toArray(),
-                    'backgroundColor' => [
-                        'rgb(59, 130, 246)',   // Blue
-                        'rgb(16, 185, 129)',   // Green
-                        'rgb(245, 158, 11)',   // Yellow
-                        'rgb(239, 68, 68)',    // Red
-                        'rgb(139, 92, 246)',   // Purple
-                        'rgb(236, 72, 153)',   // Pink
-                        'rgb(20, 184, 166)',   // Teal
-                        'rgb(251, 146, 60)',   // Orange
-                        'rgb(156, 163, 175)',  // Gray
-                        'rgb(34, 197, 94)',    // Emerald
-                    ],
-                    'borderColor' => 'rgb(255, 255, 255)',
-                    'borderWidth' => 2,
-                ],
-            ],
-            'labels' => $labels,
+            'datasets' => [[
+                'label'           => 'Students',
+                'data'            => $districtData->pluck('count')->toArray(),
+                'backgroundColor' => $this->palette(),
+                'borderColor'     => 'rgb(255,255,255)',
+                'borderWidth'     => 2,
+            ]],
+            'labels' => $districtData->map(fn ($d) => $d['name'] . ' (' . $d['count'] . ')')->toArray(),
         ];
     }
 
-    protected function getType(): string
+    /** True when the current filter is a grouping toggle, not a year/program scope. */
+    private function getIsGroupingFilter(): bool
     {
-        return 'doughnut';
+        return in_array($this->filter, ['group_church', 'group_district', '', null]);
     }
+
+    private function palette(): array
+    {
+        return [
+            'rgb(59,130,246)', 'rgb(16,185,129)', 'rgb(245,158,11)', 'rgb(239,68,68)',
+            'rgb(139,92,246)', 'rgb(236,72,153)', 'rgb(20,184,166)', 'rgb(251,146,60)',
+            'rgb(156,163,175)', 'rgb(34,197,94)',
+        ];
+    }
+
+    protected function getType(): string { return 'doughnut'; }
 
     protected function getOptions(): array
     {
         return [
-            'responsive' => true,
+            'responsive'          => true,
             'maintainAspectRatio' => false,
             'plugins' => [
-                'legend' => [
-                    'position' => 'bottom',
-                    'labels' => [
-                        'usePointStyle' => true,
-                        'padding' => 15,
-                        'font' => [
-                            'size' => 12,
-                        ],
-                    ],
-                ],
-                'tooltip' => [
-                    'callbacks' => [
-                        'label' => 'function(context) {
-                            var label = context.label || "";
-                            var value = context.parsed || 0;
-                            var total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            var percentage = Math.round((value / total) * 100);
-                            return label + ": " + value + " students (" + percentage + "%)";
-                        }',
-                    ],
-                ],
-                'datalabels' => [
-                    'display' => true,
-                    'color' => 'white',
-                    'font' => [
-                        'weight' => 'bold',
-                        'size' => 14,
-                    ],
-                    'formatter' => 'function(value, context) {
-                        var total = context.dataset.data.reduce((a, b) => a + b, 0);
-                        var percentage = Math.round((value / total) * 100);
-                        return percentage > 5 ? value : "";
-                    }',
-                ],
+                'legend'  => ['position' => 'bottom', 'labels' => ['usePointStyle' => true, 'padding' => 15]],
+                'tooltip' => ['callbacks' => ['label' => 'function(c){var t=c.dataset.data.reduce((a,b)=>a+b,0);var p=Math.round(c.parsed/t*100);return c.label+": "+c.parsed+" ("+p+"%)"}']],
             ],
             'cutout' => '50%',
         ];
-    }
-
-    public function getHeading(): string
-    {
-        return $this->filter === 'district'
-            ? 'Student Distribution by District'
-            : 'Student Distribution by Church';
     }
 }
