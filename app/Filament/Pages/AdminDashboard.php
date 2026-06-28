@@ -45,13 +45,13 @@ class AdminDashboard extends Dashboard
 
         return $form
             ->schema([
-                Select::make('year')
-                    ->label('Viewing year')
-                    ->options($years)
-                    ->default((string) $currentYear)
-                    ->native(false)
-                    ->placeholder('All Years')
-                    ->extraAttributes(['class' => 'min-w-[140px]']),
+//                Select::make('year')
+//                    ->label('Viewing year')
+//                    ->options($years)
+//                    ->default((string) $currentYear)
+//                    ->native(false)
+//                    ->placeholder('All Years')
+//                    ->extraAttributes(['class' => 'min-w-[140px]']),
             ]);
     }
 }
