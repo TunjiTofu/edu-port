@@ -119,7 +119,10 @@ class TaskResource extends Resource
                                         ->color(function ($state, $record) {
                                             if (! $state) return 'gray';
                                             if ($record->submissions->isNotEmpty()) return 'success';
-                                            $days = now()->diffInDays($state, false);
+                                            $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                                            // FIX: (int) cast prevents "0.74d left" decimal display.
+                                            // Compare against end-of-day so "today" is correct at any time.
+                                            $days = (int) now()->diffInDays($c->copy()->endOfDay(), false);
                                             return match (true) {
                                                 $days < 0  => 'danger',
                                                 $days <= 3 => 'warning',
@@ -129,13 +132,15 @@ class TaskResource extends Resource
                                         ->formatStateUsing(function ($state, $record) {
                                             if (! $state) return '🗓 No deadline';
                                             $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
-                                            $days = now()->diffInDays($c, false);
+                                            // FIX: (int) cast + endOfDay comparison = whole-day values only
+                                            $days = (int) now()->diffInDays($c->copy()->endOfDay(), false);
                                             if ($record->submissions->isNotEmpty()) return '📤 Submitted';
                                             return match (true) {
-                                                $days < 0  => '🔴 Overdue — ' . $c->format('M j'),
-                                                $days == 0 => '⚠️ Due today',
-                                                $days <= 3 => "⚠️ {$days}d left",
-                                                default    => '📅 ' . $c->format('M j, Y'),
+                                                $days < 0   => '🔴 Overdue — ' . $c->format('M j'),
+                                                $days === 0 => '⚠️ Due today',
+                                                $days === 1 => '⚠️ 1 day left',
+                                                $days <= 3  => "⚠️ {$days} days left",
+                                                default     => '📅 ' . $c->format('M j, Y'),
                                             };
                                         }),
 
@@ -217,7 +222,6 @@ class TaskResource extends Resource
                     ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
 
                 // Resubmit — while pending_review (not yet picked up) OR needs_revision
-                // (reviewer sent it back for changes)
                 Tables\Actions\Action::make('resubmit')
                     ->label(fn ($record) =>
                     $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
@@ -397,13 +401,22 @@ class TaskResource extends Resource
                                 'application/msword',
                                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                             ])
-                            ->maxSize(5120)  // 5 MB
+                            // ── FIX: Match the server's PHP upload_max_filesize (2 MB on production).
+                            // Livewire validates this client-side BEFORE sending to the server, so the
+                            // user sees a friendly message instead of the cryptic UUID "failed to upload"
+                            // error that appears when PHP's limit rejects the request.
+                            ->maxSize(2048)
                             ->required()
                             ->directory('submissions/temp')
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF, DOC or DOCX — max 5 MB'),
+                            ->helperText('PDF, DOC or DOCX — maximum 2 MB. Compress your document if it is larger.')
+                            ->validationMessages([
+                                'max'      => 'Your file is too large. The maximum allowed size is 2 MB. Please compress your document and try again.',
+                                'mimes'    => 'Only PDF, DOC, and DOCX files are accepted.',
+                                'required' => 'Please upload your assignment file before continuing.',
+                            ]),
 
                         Textarea::make('notes')
                             ->label('Notes for your Reviewer (Optional)')
@@ -443,8 +456,6 @@ class TaskResource extends Resource
             'ip'           => request()->ip(),
         ];
 
-        // ── Server-side guards — cannot be bypassed by UI manipulation ────
-        // Check 1: task overdue
         if ($record->due_date && $record->due_date->isPast()) {
             Log::warning('Submission: blocked — task overdue', array_merge($context, [
                 'event'    => 'submission_blocked_overdue',
@@ -457,7 +468,6 @@ class TaskResource extends Resource
             return;
         }
 
-        // Check 2: candidate graduated or disqualified
         $candidate = Auth::user();
         if ($candidate?->hasCompletedProgram() || $candidate?->isDisqualified()) {
             Log::warning('Submission: blocked — candidate locked', array_merge($context, [
@@ -472,7 +482,6 @@ class TaskResource extends Resource
             return;
         }
 
-        // Check 3: already submitted
         if (Submission::where('task_id', $record->id)->where('student_id', Auth::id())->exists()) {
             Log::warning('Submission: blocked — already submitted', array_merge($context, [
                 'event' => 'submission_blocked_duplicate',
@@ -521,16 +530,9 @@ class TaskResource extends Resource
 
     /**
      * Replace an existing PENDING_REVIEW or NEEDS_REVISION submission with a new file.
-     * The old file is deleted from storage and the submission record is updated.
-     * If the submission was sent back for revision, the associated Review is
-     * unlocked (is_completed reset to false) so the same reviewer can re-score
-     * it once the candidate resubmits.
      */
     public static function handleResubmission(Task $record, array $data): void
     {
-        // ── Server-side guards ─────────────────────────────────────────────
-        // Even though the UI hides the resubmit button for overdue tasks,
-        // validate server-side so a stale page load cannot bypass the check.
         if ($record->due_date && $record->due_date->isPast()) {
             Log::warning('Resubmission: blocked — task overdue', [
                 'event'        => 'resubmission_blocked_overdue',
@@ -596,14 +598,8 @@ class TaskResource extends Resource
                 'status'        => SubmissionTypes::PENDING_REVIEW->value,
             ]);
 
-            // If this was sent back for revision, unlock the existing review
-            // so the same reviewer can re-score it. The reviewer's previous
-            // score/comments remain visible as a starting point but the form
-            // becomes editable again (isLocked() checks is_completed).
             if ($wasNeedsRevision && $existing->review) {
-                $existing->review->update([
-                    'is_completed' => false,
-                ]);
+                $existing->review->update(['is_completed' => false]);
 
                 Log::info('Resubmission: review unlocked for re-scoring', [
                     'event'         => 'resubmission_review_unlocked',
