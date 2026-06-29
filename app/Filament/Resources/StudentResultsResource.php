@@ -53,13 +53,23 @@ class StudentResultsResource extends Resource
                     ->searchable()->sortable()->weight(FontWeight::Bold),
 
                 Tables\Columns\TextColumn::make('email')
-                    ->label('Email')->searchable()->toggleable(),
+                    ->label('Email')->searchable()->sortable()->toggleable(),
 
                 Tables\Columns\TextColumn::make('church.name')
-                    ->label('Church')->searchable()->toggleable(),
+                    ->label('Church')->searchable()->toggleable()
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw(
+                        "(SELECT name FROM churches WHERE churches.id = users.church_id) {$direction}"
+                    )
+                    ),
 
                 Tables\Columns\TextColumn::make('district.name')
-                    ->label('District')->searchable()->toggleable(),
+                    ->label('District')->searchable()->toggleable()
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw(
+                        "(SELECT name FROM districts WHERE districts.id = users.district_id) {$direction}"
+                    )
+                    ),
 
                 // ── Candidate status badge ──────────────────────────────────
                 Tables\Columns\TextColumn::make('candidate_status')
@@ -78,7 +88,17 @@ class StudentResultsResource extends Resource
                         'graduated'    => 'success',
                         'disqualified' => 'danger',
                         default        => 'info',
-                    }),
+                    })
+                    // Sort order: Active → Graduated → Disqualified
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw("
+                            CASE
+                                WHEN users.disqualified_at IS NOT NULL THEN 2
+                                WHEN users.program_completed_at IS NOT NULL THEN 1
+                                ELSE 0
+                            END {$direction}
+                        ")
+                    ),
 
                 Tables\Columns\TextColumn::make('submitted_tasks')
                     ->label('Tasks Submitted')->alignCenter()->badge()->color('success')
@@ -86,14 +106,27 @@ class StudentResultsResource extends Resource
                         $submitted = $record->submissions()->count();
                         $total     = Task::where('is_active', 1)->count();
                         return "{$submitted}/{$total}";
-                    }),
+                    })
+                    // Sort by actual submission count via subquery (avoids join conflicts)
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw(
+                        "(SELECT COUNT(*) FROM submissions WHERE submissions.student_id = users.id) {$direction}"
+                    )
+                    ),
 
                 Tables\Columns\TextColumn::make('pending_tasks')
                     ->label('Not Submitted')->alignCenter()->badge()->color('danger')
                     ->getStateUsing(function (User $record): int {
                         $submitted = $record->submissions()->pluck('task_id')->toArray();
                         return Task::where('is_active', 1)->whereNotIn('id', $submitted)->count();
-                    }),
+                    })
+                    // Sort ascending by submitted count = descending by not-submitted count
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw(
+                        "(SELECT COUNT(*) FROM submissions WHERE submissions.student_id = users.id) "
+                        . ($direction === 'asc' ? 'desc' : 'asc')
+                    )
+                    ),
 
                 Tables\Columns\TextColumn::make('total_score')
                     ->label('Total Score')->alignCenter()->badge()->color('info')
@@ -101,7 +134,11 @@ class StudentResultsResource extends Resource
                         $studentScore  = static::getStudentScore($record->id);
                         $totalMaxScore = static::getTotalMaxScore();
                         return round($studentScore, 1) . '/' . round($totalMaxScore, 1);
-                    }),
+                    })
+                    // total_score and calculated_score_percentage have the same ranking order
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderBy('calculated_score_percentage', $direction)
+                    ),
 
                 Tables\Columns\TextColumn::make('calculated_score_percentage')
                     ->label('Score /100')->alignCenter()->badge()->sortable()
@@ -145,7 +182,11 @@ class StudentResultsResource extends Resource
                             $scoreOutOf60 >= 30 => 'warning',
                             default             => 'danger',
                         };
-                    }),
+                    })
+                    // Derived from calculated_score_percentage — same ranking
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderBy('calculated_score_percentage', $direction)
+                    ),
             ])
             ->filters([
                 // ── Registration year ───────────────────────────────────────
