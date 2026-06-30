@@ -63,7 +63,8 @@ class TaskResource extends Resource
             ->whereDoesntHave('submissions', fn ($q) =>
             $q->where('student_id', Auth::id())
             )
-            ->where(fn ($q) => $q->where('due_date', '>=', now())->orWhereNull('due_date'))
+            // FIX: include tasks due today (through 11:59 PM), not just future ones
+            ->where(fn ($q) => $q->where('due_date', '>=', now()->startOfDay())->orWhereNull('due_date'))
             ->count();
 
         return $pending > 0 ? (string) $pending : null;
@@ -200,7 +201,8 @@ class TaskResource extends Resource
                     ->toggle()
                     ->query(fn (Builder $query) =>
                     $query->whereNotNull('due_date')
-                        ->where('due_date', '<', now())
+                        // FIX: only flag as overdue once the entire due date has passed
+                        ->where('due_date', '<', now()->startOfDay())
                         ->whereDoesntHave('submissions', fn ($q) =>
                         $q->where('student_id', Auth::id())
                         )
@@ -456,7 +458,10 @@ class TaskResource extends Resource
             'ip'           => request()->ip(),
         ];
 
-        if ($record->due_date && $record->due_date->isPast()) {
+        // FIX: compare against end of the due date, not the exact stored time
+        // (which is usually midnight). This allows submissions until 11:59 PM
+        // on the due date itself, matching the badge display logic.
+        if ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
             Log::warning('Submission: blocked — task overdue', array_merge($context, [
                 'event'    => 'submission_blocked_overdue',
                 'due_date' => $record->due_date->toDateTimeString(),
@@ -533,7 +538,9 @@ class TaskResource extends Resource
      */
     public static function handleResubmission(Task $record, array $data): void
     {
-        if ($record->due_date && $record->due_date->isPast()) {
+        // FIX: compare against end of the due date, not the exact stored time —
+        // allows resubmission until 11:59 PM on the due date itself.
+        if ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
             Log::warning('Resubmission: blocked — task overdue', [
                 'event'        => 'resubmission_blocked_overdue',
                 'candidate_id' => Auth::id(),
