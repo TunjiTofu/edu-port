@@ -86,7 +86,7 @@ class TaskResource extends Resource
                             ->label('')
                             ->getStateUsing(function ($record) {
                                 $sub = $record->submissions->first();
-                                if (! $sub) return $record->due_date?->isPast() ? '🔴' : '📝';
+                                if (! $sub) return ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) ? '🔴' : '📝';
                                 return match ($sub->status) {
                                     SubmissionTypes::COMPLETED->value      => '✅',
                                     SubmissionTypes::PENDING_REVIEW->value => '⏳',
@@ -273,7 +273,7 @@ class TaskResource extends Resource
                                 Infolists\Components\TextEntry::make('due_date')
                                     ->label('Due Date')
                                     ->badge()
-                                    ->color(fn ($state) => $state?->isPast() ? 'danger' : 'success')
+                                    ->color(fn ($state) => ($state && now()->gt($state->copy()->endOfDay())) ? 'danger' : 'success')
                                     ->formatStateUsing(fn ($state) => $state
                                         ? $state->format('M j, Y')
                                         : 'No deadline'
@@ -400,8 +400,6 @@ class TaskResource extends Resource
                             ->label('Upload Your Work')
                             ->acceptedFileTypes([
                                 'application/pdf',
-                                'application/msword',
-                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                             ])
                             // ── FIX: Match the server's PHP upload_max_filesize (2 MB on production).
                             // Livewire validates this client-side BEFORE sending to the server, so the
@@ -413,10 +411,10 @@ class TaskResource extends Resource
                             ->preserveFilenames()
                             ->disk('public')
                             ->storeFileNamesIn('original_file_name')
-                            ->helperText('PDF, DOC or DOCX — maximum 2 MB. Compress your document if it is larger.')
+                            ->helperText('PDF only — maximum 2 MB. Compress your document if it is larger.')
                             ->validationMessages([
                                 'max'      => 'Your file is too large. The maximum allowed size is 2 MB. Please compress your document and try again.',
-                                'mimes'    => 'Only PDF, DOC, and DOCX files are accepted.',
+                                'mimes'    => 'Only PDF files are accepted. Please convert your document to PDF and try again.',
                                 'required' => 'Please upload your assignment file before continuing.',
                             ]),
 
