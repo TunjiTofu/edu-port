@@ -37,7 +37,8 @@ class UpcomingDeadlinesWidget extends BaseWidget
                         $query->where('student_id', auth()->id());
                     })
                     ->where(function ($query) {
-                        $query->where('due_date', '>=', now())
+                        // FIX: include tasks due today (through 11:59 PM), not just future ones
+                        $query->where('due_date', '>=', now()->startOfDay())
                             ->orWhereNull('due_date');
                     })
                     ->with(['section.trainingProgram'])
@@ -62,23 +63,26 @@ class UpcomingDeadlinesWidget extends BaseWidget
                     ->label('Due Date')
                     ->formatStateUsing(function ($state) {
                         if (! $state) return 'No deadline';
-                        $daysLeft  = now()->diffInDays($state, false);
-                        $wholeDays = (int) round($daysLeft);
-                        if ($daysLeft == 0) return 'Due today';
-                        if ($daysLeft == 1) return 'Due tomorrow';
-                        if ($daysLeft >  0) return "Due in {$wholeDays} days";
+                        // FIX: (int) cast + endOfDay comparison avoids decimal day counts
+                        // and keeps "today" accurate at any time of day.
+                        $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                        $days = (int) now()->diffInDays($c->copy()->endOfDay(), false);
+                        if ($days === 0) return 'Due today';
+                        if ($days === 1) return 'Due tomorrow';
+                        if ($days >   0) return "Due in {$days} days";
                         return 'Overdue';
                     })
                     ->badge()
                     ->color(function ($state) {
                         if (! $state) return 'gray';
-                        $daysLeft = now()->diffInDays($state, false);
+                        $c    = $state instanceof \Carbon\Carbon ? $state : \Carbon\Carbon::parse($state);
+                        $days = (int) now()->diffInDays($c->copy()->endOfDay(), false);
                         return match (true) {
-                            $daysLeft < 0  => 'danger',
-                            $daysLeft <= 1 => 'danger',
-                            $daysLeft <= 3 => 'warning',
-                            $daysLeft <= 7 => 'info',
-                            default        => 'success',
+                            $days < 0  => 'danger',
+                            $days <= 1 => 'danger',
+                            $days <= 3 => 'warning',
+                            $days <= 7 => 'info',
+                            default    => 'success',
                         };
                     }),
             ])
@@ -94,18 +98,25 @@ class UpcomingDeadlinesWidget extends BaseWidget
                                 ->schema([
                                     FileUpload::make('file')
                                         ->label('Upload Your Work')
+                                        // FIX: PDF only — DOC/DOCX removed per requirement
                                         ->acceptedFileTypes([
                                             'application/pdf',
-                                            'application/msword',
-                                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                                         ])
-                                        ->maxSize(10240)
+                                        // FIX: match server's PHP upload_max_filesize (2 MB on
+                                        // production). Was 10240 (10MB), which silently failed
+                                        // server-side with a cryptic "failed to upload" error.
+                                        ->maxSize(2048)
                                         ->required()
                                         ->directory('submissions/temp')
                                         ->preserveFilenames()
                                         ->disk('public')
                                         ->storeFileNamesIn('original_file_name')
-                                        ->helperText('Accepted: PDF, DOC, DOCX — Max 10MB'),
+                                        ->helperText('PDF only — maximum 2 MB. Compress your document if it is larger.')
+                                        ->validationMessages([
+                                            'max'      => 'Your file is too large. The maximum allowed size is 2 MB. Please compress your document and try again.',
+                                            'mimes'    => 'Only PDF files are accepted. Please convert your document to PDF and try again.',
+                                            'required' => 'Please upload your assignment file before continuing.',
+                                        ]),
 
                                     Textarea::make('notes')
                                         ->label('Notes (Optional)')
@@ -133,11 +144,10 @@ class UpcomingDeadlinesWidget extends BaseWidget
                     ])
                     ->action(function ($record, $data) {
                         // ── Server-side guard — deadline check ─────────────
-                        // The widget query already excludes submitted tasks,
-                        // but the due_date check must also be validated here
-                        // because a page can stay open past midnight and a
-                        // user on a stale page could still trigger the action.
-                        if ($record->due_date && $record->due_date->isPast()) {
+                        // FIX: compare against end of the due date, not the exact
+                        // stored time (usually midnight). Allows submission until
+                        // 11:59 PM on the due date itself.
+                        if ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
                             Notification::make()
                                 ->title('Deadline Passed')
                                 ->body('The deadline for this task has passed. Submissions are no longer accepted.')
@@ -255,6 +265,23 @@ class UpcomingDeadlinesWidget extends BaseWidget
                 'task_id'   => $taskId,
             ]);
             throw new \RuntimeException("Uploaded file not found at: {$tempPath}");
+        }
+
+        // ── Server-side guard: PDF only ──────────────────────────────────────
+        // ->acceptedFileTypes() on the form is client-side only and can be
+        // bypassed (e.g. a direct request to the Livewire upload endpoint).
+        // This is the authoritative check — reads the actual file's mime type
+        // from disk before it's accepted into permanent storage.
+        $uploadedMimeType = Storage::disk('public')->mimeType($tempPath);
+        if ($uploadedMimeType !== 'application/pdf') {
+            Storage::disk('public')->delete($tempPath);
+            Log::warning('Submission file processing: rejected non-PDF file', [
+                'event'         => 'submission_file_rejected_mime',
+                'mime_type'     => $uploadedMimeType,
+                'candidate_id'  => Auth::id(),
+                'task_id'       => $taskId,
+            ]);
+            throw new \RuntimeException('Only PDF files are accepted. Please convert your document to PDF and try again.');
         }
 
         Storage::disk('public')->move($tempPath, $newPath);
