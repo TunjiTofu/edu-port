@@ -17,19 +17,33 @@ class SubmissionAdminWidget extends BaseWidget
 {
     use FiltersYearByEnrollment;
 
-    protected static ?string $pollingInterval = '30s';
+    // ── Custom view renders the filter select + stats grid ─────────────────
+    protected static string $view = 'filament.widgets.stats-widget-with-filter';
+
     protected static ?int    $sort            = 3;
     protected int|string|array $columnSpan    = 'full';
     protected static bool $isLazy             = true;
+
+    public ?string $filter = null;
+
+    // ── Public wrappers called from the blade view ─────────────────────────
+    public function getWidgetHeading(): string     { return $this->getHeading(); }
+    public function getWidgetDescription(): ?string { return $this->getDescription(); }
+    public function getWidgetFilters(): ?array     { return $this->getFilters(); }
+    public function getWidgetStats(): array        { return $this->getStats(); }
+
+    protected function getFilters(): ?array
+    {
+        return static::widgetFilterOptions();
+    }
 
     protected function getColumns(): int { return 4; }
 
     protected function getHeading(): string
     {
-        $year  = $this->getSelectedYear();
-        $label = $year ? " — {$year}" : '';
+        $label = $this->getFilterLabel();
         $total = $this->baseSubmissionQuery()->count();
-        return "Submission Overview{$label} ({$total} total)";
+        return "Submission Overview — {$label} ({$total} total)";
     }
 
     protected function getDescription(): ?string
@@ -131,15 +145,15 @@ class SubmissionAdminWidget extends BaseWidget
     private function baseSubmissionQuery()
     {
         $query = Submission::query();
-        return $this->scopeSubmissionsByYear($query);
+        return $this->scopeSubmissionsByFilter($query);
     }
 
-    private function getSubmissionChart(?int $year): array
+    private function getSubmissionChart(): array
     {
         $query = Submission::selectRaw('DATE(created_at) as date, COUNT(*) as count')
             ->where('created_at', '>=', Carbon::now()->subDays(7));
 
-        $this->scopeSubmissionsByYear($query, $year);
+        $this->scopeSubmissionsByFilter($query);
 
         return $query->groupBy('date')->orderBy('date')->pluck('count')->toArray();
     }
