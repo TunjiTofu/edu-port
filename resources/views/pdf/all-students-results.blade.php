@@ -106,6 +106,7 @@
             <th style="width: 25%;">Intending MG Name</th>
             <th style="width: 20%;">Email</th>
             <th style="width: 15%;">Church</th>
+            <th style="text-align: center; width: 8%;">Enrolled Year</th>
             <th style="text-align: center; width: 8%;">Tasks</th>
             <th style="text-align: center; width: 7%;">Done</th>
             <th style="text-align: center; width: 10%;">Score</th>
@@ -120,6 +121,7 @@
                 <td><strong>{{ $studentData['student']['name'] }}</strong></td>
                 <td>{{ $studentData['student']['email'] }}</td>
                 <td>{{ $studentData['student']['church'] ?? 'N/A' }}</td>
+                <td style="text-align: center;">{{ $studentData['student']['enrolled_year'] }}</td>
                 <td style="text-align: center;">{{ $studentData['summary']['total_tasks'] }}</td>
                 <td style="text-align: center;">{{ $studentData['summary']['submitted_count'] }}</td>
                 <td style="text-align: center;">

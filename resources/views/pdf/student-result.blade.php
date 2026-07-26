@@ -148,7 +148,7 @@
     <div class="section-title" style="padding: 5px 12px; font-size: 13px; margin-bottom: 8px; background-color: #003DA5;">INTENDING MG INFORMATION</div>
     <div style="padding: 8px 12px; background-color: #f5f5f5; border: 1px solid #ddd; font-size: 11px; line-height: 1.6;">
         <strong style="color: #003DA5;">{{ $student['name'] }}</strong> | {{ $student['email'] }} | {{ $student['phone'] ?? 'N/A' }}<br>
-        <strong>Church:</strong> {{ $student['church'] ?? 'N/A' }} | <strong>District:</strong> {{ $student['district'] ?? 'N/A' }}
+        <strong>Church:</strong> {{ $student['church'] ?? 'N/A' }} | <strong>District:</strong> {{ $student['district'] ?? 'N/A' }}| <strong>Enrolled Year:</strong> {{ $student['enrolled_year']  ?? 'N/A' }}
     </div>
 </div>
 

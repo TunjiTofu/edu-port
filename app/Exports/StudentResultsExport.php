@@ -56,11 +56,14 @@ class StudentResultsSummarySheet implements FromCollection, WithHeadings, WithMa
     public function headings(): array
     {
         return [
-            'Intending Mg Name',
+            'Intending MG Name',
             'Email',
             'Phone',
             'Church',
             'District',
+            'Program',          // ++ added
+            'Enrolled Year',    // ++ added
+            'Enrolled Date',    // ++ added
             'Total Tasks',
             'Submitted',
             'Not Submitted',
@@ -80,8 +83,11 @@ class StudentResultsSummarySheet implements FromCollection, WithHeadings, WithMa
             $studentData['student']['name'],
             $studentData['student']['email'],
             $studentData['student']['phone'],
-            $studentData['student']['church'] ?? 'N/A',
-            $studentData['student']['district'] ?? 'N/A',
+            $studentData['student']['church']        ?? 'N/A',
+            $studentData['student']['district']      ?? 'N/A',
+            $studentData['student']['program']       ?? 'N/A',       // ++ added
+            $studentData['student']['enrolled_year'] ?? 'N/A',       // ++ added
+            $studentData['student']['enrolled_at']   ?? 'N/A',       // ++ added
             $studentData['summary']['total_tasks'],
             $studentData['summary']['submitted_count'],
             $studentData['summary']['not_submitted_count'],
@@ -131,22 +137,25 @@ class StudentResultDetailSheet implements FromCollection, WithHeadings, WithMapp
 
         // Student information
         $data->push(['section' => 'STUDENT INFORMATION']);
-        $data->push(['label' => 'Name', 'value' => $this->studentData['student']['name']]);
-        $data->push(['label' => 'Email', 'value' => $this->studentData['student']['email']]);
-        $data->push(['label' => 'Phone', 'value' => $this->studentData['student']['phone']]);
-        $data->push(['label' => 'Church', 'value' => $this->studentData['student']['church'] ?? 'N/A']);
-        $data->push(['label' => 'District', 'value' => $this->studentData['student']['district'] ?? 'N/A']);
+        $data->push(['label' => 'Name',          'value' => $this->studentData['student']['name']]);
+        $data->push(['label' => 'Email',         'value' => $this->studentData['student']['email']]);
+        $data->push(['label' => 'Phone',         'value' => $this->studentData['student']['phone']]);
+        $data->push(['label' => 'Church',        'value' => $this->studentData['student']['church']        ?? 'N/A']);
+        $data->push(['label' => 'District',      'value' => $this->studentData['student']['district']      ?? 'N/A']);
+        $data->push(['label' => 'Program',       'value' => $this->studentData['student']['program']       ?? 'N/A']); // ++ added
+        $data->push(['label' => 'Enrolled Year', 'value' => $this->studentData['student']['enrolled_year'] ?? 'N/A']); // ++ added
+        $data->push(['label' => 'Enrolled Date', 'value' => $this->studentData['student']['enrolled_at']   ?? 'N/A']); // ++ added
         $data->push(['section' => '']); // Empty row
 
         // Overall summary
         $data->push(['section' => 'OVERALL SUMMARY']);
-        $data->push(['label' => 'Total Tasks', 'value' => $this->studentData['summary']['total_tasks']]);
-        $data->push(['label' => 'Tasks Submitted', 'value' => $this->studentData['summary']['submitted_count']]);
-        $data->push(['label' => 'Tasks Not Submitted', 'value' => $this->studentData['summary']['not_submitted_count']]);
-        $data->push(['label' => 'Total Score', 'value' => number_format($this->studentData['summary']['total_score'], 2) . ' / ' . number_format($this->studentData['summary']['max_score'], 2)]);
-        $data->push(['label' => 'Percentage', 'value' => number_format($this->studentData['summary']['percentage'], 2) . '%']);
-        $data->push(['label' => 'Score out of 100', 'value' => number_format($this->studentData['summary']['score_out_of_100'], 2)]);
-        $data->push(['label' => 'Score out of 60', 'value' => number_format($this->studentData['summary']['score_out_of_60'], 2)]);
+        $data->push(['label' => 'Total Tasks',        'value' => $this->studentData['summary']['total_tasks']]);
+        $data->push(['label' => 'Tasks Submitted',    'value' => $this->studentData['summary']['submitted_count']]);
+        $data->push(['label' => 'Tasks Not Submitted','value' => $this->studentData['summary']['not_submitted_count']]);
+        $data->push(['label' => 'Total Score',        'value' => number_format($this->studentData['summary']['total_score'], 2) . ' / ' . number_format($this->studentData['summary']['max_score'], 2)]);
+        $data->push(['label' => 'Percentage',         'value' => number_format($this->studentData['summary']['percentage'], 2) . '%']);
+        $data->push(['label' => 'Score out of 100',   'value' => number_format($this->studentData['summary']['score_out_of_100'], 2)]);
+        $data->push(['label' => 'Score out of 60',    'value' => number_format($this->studentData['summary']['score_out_of_60'], 2)]);
         $data->push(['section' => '']); // Empty row
 
         // Section breakdown
@@ -158,19 +167,19 @@ class StudentResultDetailSheet implements FromCollection, WithHeadings, WithMapp
             // Tasks header
             $data->push([
                 'section' => 'Task',
-                'label' => 'Max Score',
-                'value' => 'Score',
-                'extra1' => 'Status',
-                'extra2' => 'Comments'
+                'label'   => 'Max Score',
+                'value'   => 'Score',
+                'extra1'  => 'Status',
+                'extra2'  => 'Comments',
             ]);
 
             foreach ($section['tasks'] as $task) {
                 $data->push([
                     'section' => $task['title'],
-                    'label' => $task['max_score'],
-                    'value' => $task['score'] ?? 'N/A',
-                    'extra1' => $task['status'],
-                    'extra2' => $task['comments'] ?? 'No comments'
+                    'label'   => $task['max_score'],
+                    'value'   => $task['score'] ?? 'N/A',
+                    'extra1'  => $task['status'],
+                    'extra2'  => $task['comments'] ?? 'No comments',
                 ]);
             }
 
@@ -196,10 +205,10 @@ class StudentResultDetailSheet implements FromCollection, WithHeadings, WithMapp
         if (isset($row['extra1'])) {
             return [
                 $row['section'] ?? '',
-                $row['label'] ?? '',
-                $row['value'] ?? '',
-                $row['extra1'] ?? '',
-                $row['extra2'] ?? ''
+                $row['label']   ?? '',
+                $row['value']   ?? '',
+                $row['extra1']  ?? '',
+                $row['extra2']  ?? '',
             ];
         }
 
@@ -208,7 +217,7 @@ class StudentResultDetailSheet implements FromCollection, WithHeadings, WithMapp
             $row['value'] ?? '',
             '',
             '',
-            ''
+            '',
         ];
     }
 
