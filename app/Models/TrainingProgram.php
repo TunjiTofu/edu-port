@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class TrainingProgram extends Model
@@ -26,7 +27,7 @@ class TrainingProgram extends Model
     /**
      * The attributes that should be cast to native types.
      *
-     * @var array<string, string>
+     * @return array
      */
     protected function casts(): array
     {
@@ -215,7 +216,7 @@ class TrainingProgram extends Model
      */
     public function cloneTo(string $newName, int $year): static
     {
-        return \Illuminate\Support\Facades\DB::transaction(function () use ($newName, $year) {
+        return DB::transaction(function () use ($newName, $year) {
 
             // ── Clone the program record ──────────────────────────────────
             $newProgram = $this->replicate();
