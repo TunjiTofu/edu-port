@@ -100,14 +100,40 @@ class StudentResultsResource extends Resource
                         ")
                     ),
 
+                Tables\Columns\TextColumn::make('enrolled_year')
+                    ->label('Enrolled')
+                    ->badge()
+                    ->color('gray')
+                    ->getStateUsing(fn (User $record) =>
+                        $record->enrollments()
+                            ->with('trainingProgram')
+                            ->orderByDesc('enrolled_at')
+                            ->first()
+                            ?->enrolled_at
+                            ?->format('Y') ?? '—'
+                    )
+                    ->sortable(query: fn (Builder $query, string $direction) =>
+                    $query->orderByRaw(
+                        "(SELECT YEAR(pe.enrolled_at) FROM program_enrollments pe
+                              WHERE pe.student_id = users.id
+                              ORDER BY pe.enrolled_at DESC LIMIT 1) {$direction}"
+                    )
+                    ),
+
                 Tables\Columns\TextColumn::make('submitted_tasks')
                     ->label('Tasks Submitted')->alignCenter()->badge()->color('success')
                     ->getStateUsing(function (User $record): string {
+                        // Scope total tasks to the student's enrolled program only
+                        $programId = $record->enrollments()->latest('enrolled_at')
+                            ->value('training_program_id');
                         $submitted = $record->submissions()->count();
-                        $total     = Task::where('is_active', 1)->count();
+                        $total     = $programId
+                            ? Task::where('is_active', 1)
+                                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                                ->count()
+                            : 0;
                         return "{$submitted}/{$total}";
                     })
-                    // Sort by actual submission count via subquery (avoids join conflicts)
                     ->sortable(query: fn (Builder $query, string $direction) =>
                     $query->orderByRaw(
                         "(SELECT COUNT(*) FROM submissions WHERE submissions.student_id = users.id) {$direction}"
@@ -117,10 +143,17 @@ class StudentResultsResource extends Resource
                 Tables\Columns\TextColumn::make('pending_tasks')
                     ->label('Not Submitted')->alignCenter()->badge()->color('danger')
                     ->getStateUsing(function (User $record): int {
-                        $submitted = $record->submissions()->pluck('task_id')->toArray();
-                        return Task::where('is_active', 1)->whereNotIn('id', $submitted)->count();
+                        // Scope total tasks to the student's enrolled program only
+                        $programId   = $record->enrollments()->latest('enrolled_at')
+                            ->value('training_program_id');
+                        $submittedIds = $record->submissions()->pluck('task_id')->toArray();
+                        return $programId
+                            ? Task::where('is_active', 1)
+                                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                                ->whereNotIn('id', $submittedIds)
+                                ->count()
+                            : 0;
                     })
-                    // Sort ascending by submitted count = descending by not-submitted count
                     ->sortable(query: fn (Builder $query, string $direction) =>
                     $query->orderByRaw(
                         "(SELECT COUNT(*) FROM submissions WHERE submissions.student_id = users.id) "
@@ -132,10 +165,9 @@ class StudentResultsResource extends Resource
                     ->label('Total Score')->alignCenter()->badge()->color('info')
                     ->getStateUsing(function (User $record): string {
                         $studentScore  = static::getStudentScore($record->id);
-                        $totalMaxScore = static::getTotalMaxScore();
+                        $totalMaxScore = static::getStudentTotalMaxScore($record->id);
                         return round($studentScore, 1) . '/' . round($totalMaxScore, 1);
                     })
-                    // total_score and calculated_score_percentage have the same ranking order
                     ->sortable(query: fn (Builder $query, string $direction) =>
                     $query->orderBy('calculated_score_percentage', $direction)
                     ),
@@ -147,7 +179,7 @@ class StudentResultsResource extends Resource
                             return number_format($record->calculated_score_percentage, 1) . '/100';
                         }
                         $studentScore  = static::getStudentScore($record->id);
-                        $totalMaxScore = static::getTotalMaxScore();
+                        $totalMaxScore = static::getStudentTotalMaxScore($record->id);
                         if ($totalMaxScore == 0) return '0/100';
                         return number_format(($studentScore / $totalMaxScore) * 100, 1) . '/100';
                     })
@@ -167,14 +199,14 @@ class StudentResultsResource extends Resource
                     ->label('Score /60')->alignCenter()->badge()
                     ->getStateUsing(function (User $record): string {
                         $studentScore  = static::getStudentScore($record->id);
-                        $totalMaxScore = static::getTotalMaxScore();
+                        $totalMaxScore = static::getStudentTotalMaxScore($record->id);
                         if ($totalMaxScore == 0) return '0/60';
                         $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
                         return number_format($scoreOutOf60, 1) . '/60';
                     })
                     ->color(function (User $record): string {
                         $studentScore  = static::getStudentScore($record->id);
-                        $totalMaxScore = static::getTotalMaxScore();
+                        $totalMaxScore = static::getStudentTotalMaxScore($record->id);
                         if ($totalMaxScore == 0 || $studentScore == 0) return 'gray';
                         $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
                         return match (true) {
@@ -183,7 +215,6 @@ class StudentResultsResource extends Resource
                             default             => 'danger',
                         };
                     })
-                    // Derived from calculated_score_percentage — same ranking
                     ->sortable(query: fn (Builder $query, string $direction) =>
                     $query->orderBy('calculated_score_percentage', $direction)
                     ),
@@ -399,23 +430,29 @@ class StudentResultsResource extends Resource
             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
     }
 
-    private static function getTotalMaxScore(): float
+    /**
+     * Total max score for tasks in the student's enrolled program(s).
+     * Replaces the old global getTotalMaxScore() which summed ALL programs.
+     */
+    private static function getStudentTotalMaxScore(int $studentId): float
     {
-        return DB::table('tasks')->where('is_active', 1)
-            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?? 0;
+        return DB::table('tasks')
+            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+            ->where('program_enrollments.student_id', $studentId)
+            ->whereNull('program_enrollments.deleted_at')
+            ->where('tasks.is_active', 1)
+            ->whereNull('tasks.deleted_at')
+            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?: 0;
     }
 
     private static function getScorePercentage(int $studentId): float
     {
         $studentScore  = static::getStudentScore($studentId);
-        $totalMaxScore = static::getTotalMaxScore();
+        $totalMaxScore = static::getStudentTotalMaxScore($studentId);
         return $totalMaxScore > 0 ? ($studentScore / $totalMaxScore) * 100 : 0;
     }
 
-    /**
-     * Sort a collection of students OR student data arrays by score descending.
-     * Works for both User collections and the mapped data arrays used by exports.
-     */
     private static function sortedByScore($collection): \Illuminate\Support\Collection
     {
         return collect($collection)->sortByDesc(function ($item) {
@@ -428,11 +465,6 @@ class StudentResultsResource extends Resource
         })->values();
     }
 
-    /**
-     * Shared detailed PDF export — used by all three detailed PDF actions.
-     * Accepts a Collection of User models, maps them to data arrays, sorts by
-     * score, and streams the PDF.
-     */
     private static function exportStudentsDetailedPdf($students, string $filenamePrefix): mixed
     {
         ini_set('memory_limit', '512M');
@@ -452,8 +484,6 @@ class StudentResultsResource extends Resource
             $filenamePrefix . '-' . now()->format('Y-m-d') . '.pdf'
         );
     }
-
-    // ── Per-student exports (unchanged from original) ─────────────────────────
 
     protected static function exportStudentPdf(User $student): mixed
     {
@@ -483,33 +513,35 @@ class StudentResultsResource extends Resource
         ];
     }
 
-    public static function getEloquentQuery(): Builder
-    {
-        $totalMaxScore = DB::table('tasks')
-            ->where('is_active', 1)
-            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?: 1;
-
-        return parent::getEloquentQuery()
-            ->where('users.role_id', Constants::STUDENT_ID)
-            ->leftJoin('submissions', 'users.id', '=', 'submissions.student_id')
-            ->leftJoin('reviews', 'submissions.id', '=', 'reviews.submission_id')
-            ->selectRaw("users.*,
-                (COALESCE(SUM(CAST(reviews.score AS DECIMAL(10,2))), 0) / {$totalMaxScore} * 100)
-                    as calculated_score_percentage")
-            ->groupBy('users.id')
-            ->with(['church', 'district']);
-    }
-
     protected static function getStudentDetailedData(User $student): array
     {
         $student = User::with([
             'church', 'district',
             'submissions.task.section',
             'submissions.review',
+            'enrollments.trainingProgram',
         ])->find($student->id);
 
-        $allTasks   = Task::where('is_active', 1)->with('section')
-            ->orderBy('section_id')->orderBy('order_index')->get();
+        // ── Get enrollment info ────────────────────────────────────────────────
+        $enrollment   = $student->enrollments()->with('trainingProgram')
+            ->orderByDesc('enrolled_at')->first();
+        $programId    = $enrollment?->training_program_id;
+        $programName  = $enrollment?->trainingProgram?->name ?? '—';
+        $enrolledAt   = $enrollment?->enrolled_at;
+        $enrolledYear = $enrolledAt?->format('Y') ?? '—';
+
+        // ── Tasks scoped to the student's enrolled program only ────────────────
+        // Previously: all active tasks across all programs (incorrect when
+        // multiple training programs exist). Now: only tasks in the program
+        // this student is enrolled in.
+        $allTasks = $programId
+            ? Task::where('is_active', 1)
+                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                ->with('section')
+                ->orderBy('section_id')->orderBy('order_index')
+                ->get()
+            : collect();
+
         $submissions = $student->submissions()->with(['task.section', 'review'])->get()->keyBy('task_id');
 
         $studentScore  = $submissions->sum(fn ($sub) => $sub->review?->score ?? 0);
@@ -539,11 +571,11 @@ class StudentResultsResource extends Resource
             }
 
             $sections[] = [
-                'name'       => $section->name,
-                'tasks'      => $tasksData,
+                'name'        => $section->name,
+                'tasks'       => $tasksData,
                 'total_score' => $sectionStudentScore,
-                'max_score'  => $sectionMaxScore,
-                'percentage' => $sectionMaxScore > 0 ? ($sectionStudentScore / $sectionMaxScore) * 100 : 0,
+                'max_score'   => $sectionMaxScore,
+                'percentage'  => $sectionMaxScore > 0 ? ($sectionStudentScore / $sectionMaxScore) * 100 : 0,
             ];
         }
 
@@ -561,24 +593,27 @@ class StudentResultsResource extends Resource
 
         return [
             'student' => [
-                'name'     => $student->name,
-                'email'    => $student->email,
-                'phone'    => $student->phone,
-                'church'   => $student->church?->name,
-                'district' => $student->district?->name,
+                'name'          => $student->name,
+                'email'         => $student->email,
+                'phone'         => $student->phone,
+                'church'        => $student->church?->name,
+                'district'      => $student->district?->name,
+                'program'       => $programName,
+                'enrolled_year' => $enrolledYear,
+                'enrolled_at'   => $enrolledAt?->format('M j, Y') ?? '—',
             ],
             'summary' => [
-                'total_tasks'       => $allTasks->count(),
-                'submitted_count'   => $submissions->count(),
+                'total_tasks'         => $allTasks->count(),
+                'submitted_count'     => $submissions->count(),
                 'not_submitted_count' => count($notSubmittedTasks),
-                'total_score'       => $studentScore,
-                'max_score'         => $totalMaxScore,
-                'percentage'        => $percentage,
-                'score_out_of_100'  => $percentage,
-                'score_out_of_60'   => ($percentage / 100) * 60,
+                'total_score'         => $studentScore,
+                'max_score'           => $totalMaxScore,
+                'percentage'          => $percentage,
+                'score_out_of_100'    => $percentage,
+                'score_out_of_60'     => ($percentage / 100) * 60,
             ],
-            'sections'           => $sections,
-            'submitted_tasks'    => $submittedTasks,
+            'sections'            => $sections,
+            'submitted_tasks'     => $submittedTasks,
             'not_submitted_tasks' => $notSubmittedTasks,
         ];
     }
