@@ -416,7 +416,34 @@ class StudentResultsResource extends Resource
                         }),
                 ] : []
             )
-            ->defaultSort('calculated_score_percentage', 'desc');
+            ->defaultSort(function ($query) {
+                // Sort by the per-student score subquery directly — the
+                // 'calculated_score_percentage' alias isn't available in the
+                // ORDER BY clause when Filament applies defaultSort before
+                // the selectRaw from getEloquentQuery() is in scope.
+                $query->orderByRaw("(
+                    COALESCE((
+                        SELECT SUM(CAST(r.score AS DECIMAL(10,2)))
+                        FROM submissions s
+                        JOIN reviews r ON s.id = r.submission_id
+                        WHERE s.student_id = users.id
+                        AND r.score IS NOT NULL
+                    ), 0)
+                    /
+                    NULLIF((
+                        SELECT SUM(CAST(t.max_score AS DECIMAL(10,2)))
+                        FROM tasks t
+                        INNER JOIN sections sec ON t.section_id = sec.id
+                        INNER JOIN program_enrollments pe
+                            ON sec.training_program_id = pe.training_program_id
+                        WHERE pe.student_id = users.id
+                          AND pe.deleted_at IS NULL
+                          AND t.is_active = 1
+                          AND t.deleted_at IS NULL
+                    ), 0)
+                    * 100
+                ) DESC");
+            });
     }
 
     // ── Score helpers ─────────────────────────────────────────────────────────
