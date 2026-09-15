@@ -885,27 +885,10 @@ class SubmissionResource extends Resource
 
     protected static function getDownloadUrl(Submission $submission): ?string
     {
-        try {
-            $fullPath = $submission->file_path.'/'.$submission->file_name;
-
-            // Check if file exists first
-            if (!Storage::disk(config('filesystems.default'))->exists($fullPath)) {
-                Log::error("File not found at path: {$fullPath}");
-                return null;
-            }
-
-            // Generate temporary URL with proper expiration
-            return Storage::disk(config('filesystems.default'))
-                ->temporaryUrl(
-                    $fullPath,
-                    now()->addMinutes(30),
-                    [
-                        'ResponseContentDisposition' => 'attachment; filename="'.$submission->file_name.'"'
-                    ]
-                );
-        } catch (\Exception $e) {
-            Log::error("Failed to generate download URL: ".$e->getMessage());
-            return null;
-        }
+        // Use a server-side route instead of pre-generating temporary storage
+        // URLs (which called Storage::exists() + Storage::temporaryUrl() for
+        // EVERY row on page load). With 2000+ submissions that caused a 30-second
+        // timeout on production. The route checks file existence only when clicked.
+        return route('admin.submissions.file', $submission);
     }
 }
