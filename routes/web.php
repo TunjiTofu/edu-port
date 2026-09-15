@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
-// ── Landing ───────────────────────────────────────────────────────────────────
+// ── Landing ─────────────────────────────────────────────────────────────────
 
 Route::get('/', [LandingController::class, 'index']);
 
