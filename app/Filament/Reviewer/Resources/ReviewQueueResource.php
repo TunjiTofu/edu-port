@@ -60,9 +60,9 @@ class ReviewQueueResource extends Resource
                         // ── Status indicator strip (icon) ───────────────────
                         Tables\Columns\TextColumn::make('status_icon')
                             ->label('')
-                            ->getStateUsing(fn (?Submission $record) => match (true) {
-                                // Resubmission gets its own distinct icon
-                                $record?->is_resubmission && $record?->status === SubmissionTypes::PENDING_REVIEW->value => '↩',
+                            ->getStateUsing(fn (?Submission $record): string => match (true) {
+                                $record?->is_resubmission
+                                && $record?->status === SubmissionTypes::PENDING_REVIEW->value => '↩',
                                 $record?->status === SubmissionTypes::PENDING_REVIEW->value => '🆕',
                                 $record?->status === SubmissionTypes::UNDER_REVIEW->value   => '👀',
                                 $record?->status === SubmissionTypes::COMPLETED->value      => '✅',
@@ -84,25 +84,21 @@ class ReviewQueueResource extends Resource
 
                                 Tables\Columns\TextColumn::make('status')
                                     ->badge()
-                                    ->color(fn ($state, ?Submission $record) => match (true) {
-                                        $record?->is_resubmission && $state === SubmissionTypes::PENDING_REVIEW->value => 'warning',
-                                        $state === SubmissionTypes::COMPLETED->value      => 'success',
-                                        $state === SubmissionTypes::PENDING_REVIEW->value => 'info',
-                                        $state === SubmissionTypes::UNDER_REVIEW->value   => 'warning',
-                                        $state === SubmissionTypes::NEEDS_REVISION->value => 'danger',
-                                        $state === SubmissionTypes::FLAGGED->value        => 'danger',
-                                        default                                            => 'gray',
+                                    ->color(fn (string $state): string => match ($state) {
+                                        SubmissionTypes::COMPLETED->value      => 'success',
+                                        SubmissionTypes::PENDING_REVIEW->value => 'info',
+                                        SubmissionTypes::UNDER_REVIEW->value   => 'warning',
+                                        SubmissionTypes::NEEDS_REVISION->value => 'danger',
+                                        SubmissionTypes::FLAGGED->value        => 'danger',
+                                        default                                 => 'gray',
                                     })
-                                    ->formatStateUsing(fn ($state, ?Submission $record) => match (true) {
-                                        // "↩ Resubmitted" replaces "New" so reviewer knows
-                                        // this is a student's revision, not a fresh submission
-                                        $record?->is_resubmission && $state === SubmissionTypes::PENDING_REVIEW->value => '↩ Resubmitted',
-                                        $state === SubmissionTypes::PENDING_REVIEW->value => 'New',
-                                        $state === SubmissionTypes::UNDER_REVIEW->value   => 'In Progress',
-                                        $state === SubmissionTypes::COMPLETED->value      => 'Completed',
-                                        $state === SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
-                                        $state === SubmissionTypes::FLAGGED->value        => 'Flagged',
-                                        default                                            => $state,
+                                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                                        SubmissionTypes::PENDING_REVIEW->value => 'New',
+                                        SubmissionTypes::UNDER_REVIEW->value   => 'In Progress',
+                                        SubmissionTypes::COMPLETED->value      => 'Completed',
+                                        SubmissionTypes::NEEDS_REVISION->value => 'Needs Revision',
+                                        SubmissionTypes::FLAGGED->value        => 'Flagged',
+                                        default                                 => $state,
                                     })
                                     ->grow(false),
                             ]),
