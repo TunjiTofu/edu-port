@@ -264,14 +264,27 @@ class SubmissionResource extends Resource
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
-                        SubmissionTypes::PENDING_REVIEW->value => 'primary',
-                        SubmissionTypes::UNDER_REVIEW->value => 'info',
-                        SubmissionTypes::COMPLETED->value => 'success',
-                        SubmissionTypes::NEEDS_REVISION->value => 'secondary',
-                        SubmissionTypes::FLAGGED->value => 'danger',
-                        default => 'gray',
+                    ->color(fn (string $state, ?Submission $record): string => match (true) {
+                        // Resubmissions get warning colour to stand out
+                        $record?->is_resubmission && $state === SubmissionTypes::PENDING_REVIEW->value => 'warning',
+                        $state === SubmissionTypes::PENDING_REVIEW->value  => 'primary',
+                        $state === SubmissionTypes::UNDER_REVIEW->value    => 'info',
+                        $state === SubmissionTypes::COMPLETED->value       => 'success',
+                        $state === SubmissionTypes::NEEDS_REVISION->value  => 'secondary',
+                        $state === SubmissionTypes::FLAGGED->value         => 'danger',
+                        default                                             => 'gray',
+                    })
+                    ->formatStateUsing(fn (string $state, ?Submission $record): string => match (true) {
+                        // Show "↩ Resubmitted" instead of generic "Pending Review"
+                        $record?->is_resubmission && $state === SubmissionTypes::PENDING_REVIEW->value => '↩ Resubmitted',
+                        $state === SubmissionTypes::PENDING_REVIEW->value  => 'Pending Review',
+                        $state === SubmissionTypes::UNDER_REVIEW->value    => 'Under Review',
+                        $state === SubmissionTypes::COMPLETED->value       => 'Completed',
+                        $state === SubmissionTypes::NEEDS_REVISION->value  => 'Needs Revision',
+                        $state === SubmissionTypes::FLAGGED->value         => 'Flagged',
+                        default                                             => ucfirst(str_replace('_', ' ', $state)),
                     }),
+
                 Tables\Columns\TextColumn::make('review.score')
                     ->label('Score')
                     ->alignCenter()
