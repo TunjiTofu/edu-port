@@ -9,11 +9,19 @@
         $extension = strtolower(pathinfo($this->record->file_name ?? '', PATHINFO_EXTENSION));
         $isPdf     = $extension === 'pdf';
 
+        // Cache-buster based on submitted_at timestamp.
+        // When a student resubmits, submitted_at changes — so the browser
+        // treats the URL as a new resource and fetches the updated file
+        // instead of serving the old cached PDF from the previous submission.
+        $cacheBuster = $this->record->submitted_at?->timestamp
+                    ?? $this->record->updated_at?->timestamp
+                    ?? now()->timestamp;
+
         // Secure, permission-checked file route — NOT a public storage URL.
         // Works regardless of APP_URL, storage symlinks, or folder permissions
         // because it streams the file through Laravel.
-        $fileViewUrl     = route('reviewer.submissions.file', $this->record);
-        $fileDownloadUrl = route('reviewer.submissions.file', ['submission' => $this->record, 'download' => 1]);
+        $fileViewUrl     = route('reviewer.submissions.file', $this->record) . '?v=' . $cacheBuster;
+        $fileDownloadUrl = route('reviewer.submissions.file', ['submission' => $this->record, 'download' => 1]) . '?v=' . $cacheBuster;
     @endphp
 
     {{-- ── Queue progress bar ── --}}
