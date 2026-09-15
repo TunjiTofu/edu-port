@@ -29,10 +29,15 @@ class StudentLogin extends Login
             $user = User::where('email', $email)->first();
 
             if ($user) {
-                // Disqualified — specific suspension message
+                // Disqualified — show the actual reason recorded by the admin,
+                // with a fallback if no reason was provided.
                 if ($user->isDisqualified()) {
+                    $reason = $user->disqualification_reason
+                        ? $user->disqualification_reason
+                        : 'Your candidacy has been suspended. Please contact your administrator for more information.';
+
                     throw ValidationException::withMessages([
-                        'data.email' => 'Your candidacy has been suspended. Please contact your administrator for more information.',
+                        'data.email' => $reason,
                     ]);
                 }
 

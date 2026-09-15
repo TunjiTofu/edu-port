@@ -223,28 +223,37 @@ class TaskResource extends Resource
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
 
-                // Resubmit — while pending_review (not yet picked up) OR needs_revision
+                // Resubmit — pending_review AND never been through revision cycle
+                // (is_resubmission=false means first submission, not yet reviewed)
                 Tables\Actions\Action::make('resubmit')
-                    ->label(fn ($record) =>
-                    $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
-                        ? 'Resubmit (Revision Requested)'
-                        : 'Resubmit'
-                    )
+                    ->label('Resubmit')
                     ->icon('heroicon-o-arrow-path')
                     ->button()
-                    ->color(fn ($record) =>
-                    $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
-                        ? 'danger'
-                        : 'warning'
+                    ->color('warning')
+                    ->visible(fn ($record) =>
+                        $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
+                        && ! $record->submissions->first()?->is_resubmission
                     )
-                    ->visible(fn ($record) => in_array(
-                        $record->submissions->first()?->status,
-                        [SubmissionTypes::PENDING_REVIEW->value, SubmissionTypes::NEEDS_REVISION->value]
-                    ))
                     ->requiresConfirmation()
                     ->modalHeading('Replace Your Submission?')
-                    ->modalDescription('Resubmitting will replace your current file. Your previous submission will be deleted. You can only do this while the task is still awaiting review or needs revision.')
+                    ->modalDescription('Resubmitting will replace your current file. Your previous submission will be deleted. You can only do this while the task is still awaiting review.')
                     ->modalSubmitActionLabel('Yes, Replace Submission')
+                    ->form(fn () => static::submissionWizard())
+                    ->action(fn ($record, $data) => static::handleResubmission($record, $data)),
+
+                // Resubmit after revision request — only visible when needs_revision
+                Tables\Actions\Action::make('resubmit_revision')
+                    ->label('Resubmit (Revision Requested)')
+                    ->icon('heroicon-o-arrow-path')
+                    ->button()
+                    ->color('danger')
+                    ->visible(fn ($record) =>
+                        $record->submissions->first()?->status === SubmissionTypes::NEEDS_REVISION->value
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Resubmit Your Revised Work')
+                    ->modalDescription('Upload your revised file to address the reviewer\'s feedback. Your previous submission will be replaced.')
+                    ->modalSubmitActionLabel('Submit Revised Work')
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleResubmission($record, $data)),
             ])
@@ -536,9 +545,21 @@ class TaskResource extends Resource
      */
     public static function handleResubmission(Task $record, array $data): void
     {
-        // FIX: compare against end of the due date, not the exact stored time —
-        // allows resubmission until 11:59 PM on the due date itself.
-        if ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
+        // FIX: If the submission was sent back for revision, the reviewer
+        // already evaluated it after the deadline — the student must be
+        // allowed to resubmit regardless of the deadline.
+        // Only enforce the deadline for fresh pending_review submissions.
+        $existingForDeadlineCheck = Submission::where('task_id', $record->id)
+            ->where('student_id', Auth::id())
+            ->whereIn('status', [
+                SubmissionTypes::PENDING_REVIEW->value,
+                SubmissionTypes::NEEDS_REVISION->value,
+            ])
+            ->first();
+
+        $isNeedsRevision = $existingForDeadlineCheck?->status === SubmissionTypes::NEEDS_REVISION->value;
+
+        if (! $isNeedsRevision && $record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
             Log::warning('Resubmission: blocked — task overdue', [
                 'event'        => 'resubmission_blocked_overdue',
                 'candidate_id' => Auth::id(),
@@ -594,22 +615,30 @@ class TaskResource extends Resource
             $wasNeedsRevision = $existing->status === SubmissionTypes::NEEDS_REVISION->value;
 
             $existing->update([
-                'file_name'     => $fileDetails['file_name'],
-                'file_path'     => $fileDetails['file_path'],
-                'file_size'     => $fileDetails['file_size'],
-                'file_type'     => $fileDetails['file_type'],
-                'student_notes' => $data['notes'] ?? $existing->student_notes,
-                'submitted_at'  => now(),
-                'status'        => SubmissionTypes::PENDING_REVIEW->value,
+                'file_name'       => $fileDetails['file_name'],
+                'file_path'       => $fileDetails['file_path'],
+                'file_size'       => $fileDetails['file_size'],
+                'file_type'       => $fileDetails['file_type'],
+                'student_notes'   => $data['notes'] ?? $existing->student_notes,
+                'submitted_at'    => now(),
+                'status'          => SubmissionTypes::PENDING_REVIEW->value,
+                // Mark as resubmission so admin/reviewer see the indicator
+                // and so we can block a second resubmit until the reviewer
+                // explicitly sends it back for revision again.
+                'is_resubmission' => true,
             ]);
 
             if ($wasNeedsRevision && $existing->review) {
+                // Unlock for re-scoring. reviewer_id is deliberately kept —
+                // the same reviewer gets it back automatically, no admin
+                // reassignment needed.
                 $existing->review->update(['is_completed' => false]);
 
-                Log::info('Resubmission: review unlocked for re-scoring', [
+                Log::info('Resubmission: review unlocked, reviewer retained', [
                     'event'         => 'resubmission_review_unlocked',
                     'submission_id' => $existing->id,
                     'review_id'     => $existing->review->id,
+                    'reviewer_id'   => $existing->review->reviewer_id,
                 ]);
             }
 
