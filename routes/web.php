@@ -122,18 +122,25 @@ Route::middleware('auth')->group(function () {
             default => 'application/octet-stream',
         };
 
+        $forceDownload = request()->boolean('download');
+
         Log::info('Admin file access: served', [
             'event'         => 'admin_file_served',
             'submission_id' => $submission->id,
             'admin_id'      => auth()->id(),
+            'download'      => $forceDownload,
         ]);
 
         return response(Storage::get($fullPath))
             ->header('Content-Type', $contentType)
             ->header('Content-Length', (string) Storage::size($fullPath))
-            ->header('Content-Disposition', 'attachment; filename="' . $submission->file_name . '"')
+            ->header('Content-Disposition',
+                $forceDownload
+                    ? 'attachment; filename="' . $submission->file_name . '"'
+                    : 'inline; filename="' . $submission->file_name . '"'
+            )
             ->header('X-Content-Type-Options', 'nosniff')
-            ->header('Cache-Control', 'no-store, no-cache');
+            ->header('Cache-Control', 'no-cache, must-revalidate');
 
     })->name('admin.submissions.file');
 });

@@ -162,53 +162,65 @@ class ReviewQueueResource extends Resource
             ])
             ->defaultSort('submitted_at', 'asc') // oldest first — first in, first out
             ->filters([
-                // ── Year filter — defaults to current year ─────────────────
-                // Filters by the calendar year the submission was submitted.
-                // Combined with the default sort (submitted_at asc), this
-                // shows the oldest current-year submission at the top —
-                // exactly what a reviewer should tackle first.
+                // ── Year filter ─────────────────────────────────────────────
+                // Options use string keys so ->default() string matches correctly.
+                // Column is qualified as submissions.submitted_at to avoid
+                // ambiguity when Eloquent builds the whereHas join internally.
                 Tables\Filters\SelectFilter::make('year')
                     ->label('Year')
                     ->options(function () {
-                        $years = static::getEloquentQuery()
+                        $currentYear = (string) now()->year;
+                        $years       = [];
+
+                        Submission::whereHas('review', fn ($q) =>
+                        $q->where('reviewer_id', Auth::id())
+                        )
                             ->selectRaw('DISTINCT YEAR(submitted_at) as yr')
                             ->orderByDesc('yr')
-                            ->pluck('yr', 'yr')
-                            ->map(fn ($y) => (string) $y)
-                            ->toArray();
+                            ->pluck('yr')
+                            ->filter()
+                            ->each(fn ($y) => $years[(string) $y] = (string) $y);
 
-                        // Always include current year even if no submissions yet
-                        $currentYear = now()->year;
-                        $years[$currentYear] = (string) $currentYear;
+                        $years[$currentYear] = $currentYear;
                         krsort($years);
 
-                        return $years;
+                        return ['' => 'All Years'] + $years;
                     })
                     ->default((string) now()->year)
                     ->query(function (Builder $query, array $data) {
                         if (empty($data['value'])) return $query;
-                        return $query->whereYear('submitted_at', (int) $data['value']);
+                        // Qualify column to avoid ambiguity with joins
+                        return $query->whereYear('submissions.submitted_at', (int) $data['value']);
                     }),
 
-                Tables\Filters\Filter::make('needs_review')
-                    ->label('🆕 Needs My Review')
-                    ->query(fn (Builder $q) => $q->whereIn('status', [
-                        SubmissionTypes::PENDING_REVIEW->value,
-                        SubmissionTypes::UNDER_REVIEW->value,
-                    ]))
-                    ->default(),
-
-                Tables\Filters\Filter::make('needs_revision')
-                    ->label('✏️ Awaiting Resubmission')
-                    ->query(fn (Builder $q) => $q->where('status', SubmissionTypes::NEEDS_REVISION->value)),
-
-                Tables\Filters\Filter::make('completed')
-                    ->label('✅ Completed')
-                    ->query(fn (Builder $q) => $q->where('status', SubmissionTypes::COMPLETED->value)),
-
-                Tables\Filters\Filter::make('flagged')
-                    ->label('🚩 Flagged')
-                    ->query(fn (Builder $q) => $q->where('status', SubmissionTypes::FLAGGED->value)),
+                // ── Status filter ────────────────────────────────────────────
+                // Single SelectFilter keeps status filters mutually exclusive.
+                // Previously multiple toggle filters ANDed together, so turning
+                // on "Completed" + the default "Needs My Review" produced
+                // WHERE status IN (pending,under_review) AND status = 'completed'
+                // — always zero results.
+                Tables\Filters\SelectFilter::make('status_group')
+                    ->label('Status')
+                    ->options([
+                        ''              => 'All Statuses',
+                        'needs_review'  => '🆕 Needs My Review',
+                        'needs_revision'=> '✏️ Awaiting Resubmission',
+                        'completed'     => '✅ Completed',
+                        'flagged'       => '🚩 Flagged',
+                    ])
+                    ->default('needs_review')
+                    ->query(function (Builder $query, array $data) {
+                        return match ($data['value'] ?? '') {
+                            'needs_review'   => $query->whereIn('submissions.status', [
+                                SubmissionTypes::PENDING_REVIEW->value,
+                                SubmissionTypes::UNDER_REVIEW->value,
+                            ]),
+                            'needs_revision' => $query->where('submissions.status', SubmissionTypes::NEEDS_REVISION->value),
+                            'completed'      => $query->where('submissions.status', SubmissionTypes::COMPLETED->value),
+                            'flagged'        => $query->where('submissions.status', SubmissionTypes::FLAGGED->value),
+                            default          => $query,
+                        };
+                    }),
             ])
             ->actions([
                 Tables\Actions\Action::make('review')

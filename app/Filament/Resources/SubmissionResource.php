@@ -411,6 +411,17 @@ class SubmissionResource extends Resource
                 Tables\Actions\ViewAction::make()->iconButton()->tooltip('View'),
                 Tables\Actions\EditAction::make()->iconButton()->tooltip('Edit'),
 
+                Tables\Actions\Action::make('admin_review')
+                    ->icon('heroicon-o-pencil')
+                    ->color('info')
+                    ->iconButton()
+                    ->tooltip('Review & Score')
+                    ->url(fn (?Submission $record) => $record
+                        ? static::getUrl('review', ['record' => $record->id])
+                        : null
+                    )
+                    ->openUrlInNewTab(),
+
                 Tables\Actions\Action::make('download')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('primary')
@@ -650,8 +661,7 @@ class SubmissionResource extends Resource
                 ]),
             ]);
     }
-/*
-* Reviewer dropdown options with current pending workload shown.
+/* Reviewer dropdown options with current pending workload shown.
 * e.g. "David Adewale (3 pending)" — helps admins distribute evenly.
 * Sorted lightest-load first.
 */
@@ -687,10 +697,11 @@ class SubmissionResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListSubmissions::route('/'),
+            'index'  => Pages\ListSubmissions::route('/'),
             'create' => Pages\CreateSubmission::route('/create'),
-            'view' => Pages\ViewSubmission::route('/{record}'),
-            'edit' => Pages\EditSubmission::route('/{record}/edit'),
+            'view'   => Pages\ViewSubmission::route('/{record}'),
+            'edit'   => Pages\EditSubmission::route('/{record}/edit'),
+            'review' => Pages\AdminReviewSubmission::route('/{record}/review'),
         ];
     }
 
