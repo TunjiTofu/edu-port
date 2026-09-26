@@ -20,15 +20,17 @@ class ListReviewQueues extends ListRecords
             default    => 'Good evening',
         };
 
-        $name = explode(' ', Auth::user()->name)[0] ?? '';
+        $name = explode(' ', Auth::user()->name)[0] ?? 'Reviewer';
 
         return "{$greeting}, {$name}! 👋";
     }
 
     public function getSubheading(): ?string
     {
+        // Qualify the column so it doesn't clash with any joined table columns
+        // when Eloquent builds the whereHas('review', ...) internal join.
         $pending = ReviewQueueResource::getEloquentQuery()
-            ->whereIn('status', [
+            ->whereIn('submissions.status', [
                 SubmissionTypes::PENDING_REVIEW->value,
                 SubmissionTypes::UNDER_REVIEW->value,
             ])
