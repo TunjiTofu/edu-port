@@ -4,12 +4,15 @@ namespace App\Filament\Resources;
 
 use App\Enums\SubmissionTypes;
 use App\Filament\Resources\StudentSubmissionsResource\Pages;
+use App\Models\Submission;
+use App\Models\SubmissionDeadlineOverride;
+use App\Models\Task;
 use App\Models\TrainingProgram;
 use App\Models\User;
-use App\Models\Submission;
 use App\Services\Utility\Constants;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
@@ -17,16 +20,17 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class StudentSubmissionsResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $navigationIcon  = 'heroicon-o-academic-cap';
-    protected static ?string $navigationLabel = 'Student Submissions';
-    protected static ?string $navigationGroup = 'Review Management';
-    protected static ?int    $navigationSort  = 2;
-    protected static ?string $modelLabel      = 'Student Submission';
+    protected static ?string $navigationIcon   = 'heroicon-o-academic-cap';
+    protected static ?string $navigationLabel  = 'Student Submissions';
+    protected static ?string $navigationGroup  = 'Review Management';
+    protected static ?int    $navigationSort   = 2;
+    protected static ?string $modelLabel       = 'Student Submission';
     protected static ?string $pluralModelLabel = 'Student Submissions';
 
     public static function canViewAny(): bool
@@ -111,7 +115,7 @@ class StudentSubmissionsResource extends Resource
                     ->label('Total Score')
                     ->alignCenter()->badge()
                     ->getStateUsing(function (User $record): string {
-                        $studentScore = static::getStudentScore($record->id);
+                        $studentScore  = static::getStudentScore($record->id);
                         $totalMaxScore = static::getTotalMaxScore();
                         return round($studentScore, 1) . '/' . round($totalMaxScore, 1);
                     })
@@ -121,10 +125,10 @@ class StudentSubmissionsResource extends Resource
                         if ($totalMaxScore == 0) return 'gray';
                         $pct = ($studentScore / $totalMaxScore) * 100;
                         return match (true) {
-                            $pct >= 75  => 'success',
-                            $pct >= 50  => 'warning',
+                            $pct >= 75         => 'success',
+                            $pct >= 50         => 'warning',
                             $studentScore == 0 => 'gray',
-                            default     => 'danger',
+                            default            => 'danger',
                         };
                     })
                     ->tooltip(function (User $record): string {
@@ -249,6 +253,87 @@ class StudentSubmissionsResource extends Resource
                     ->url(fn (User $record): string =>
                     static::getUrl('submissions', ['record' => $record->id])
                     ),
+
+                // ── Reopen task submission for a specific student ────────────
+                // Lets one student submit past the deadline without affecting
+                // anyone else. Completely transparent — no indicator shown to student.
+                // Resets existing review if one exists.
+                Tables\Actions\Action::make('reopen_task')
+                    ->icon('heroicon-o-lock-open')
+                    ->iconButton()
+                    ->tooltip('Reopen Task Submission')
+                    ->color('warning')
+                    ->modalHeading('Reopen Task Submission')
+                    ->modalDescription('Select the task to reopen for this candidate. They will be able to submit (or resubmit) past the deadline. If they already have a submission, the existing review will be reset.')
+                    ->form(function (User $record) {
+                        $taskOptions = Task::where('is_active', true)
+                            ->whereHas('section.trainingProgram.enrollments', fn ($q) =>
+                            $q->where('student_id', $record->id)
+                            )
+                            ->with('section')
+                            ->get()
+                            ->mapWithKeys(fn ($t) =>
+                            [$t->id => ($t->section?->name ? "[{$t->section->name}] " : '') . $t->title]
+                            );
+
+                        return [
+                            Forms\Components\Select::make('task_id')
+                                ->label('Task to Reopen')
+                                ->options($taskOptions)
+                                ->searchable()
+                                ->required()
+                                ->helperText('Only tasks from this candidate\'s enrolled program are shown.'),
+                        ];
+                    })
+                    ->action(function (User $record, array $data) {
+                        $taskId  = $data['task_id'];
+                        $adminId = Auth::id();
+
+                        // Create or reset the deadline override
+                        SubmissionDeadlineOverride::updateOrCreate(
+                            ['student_id' => $record->id, 'task_id' => $taskId],
+                            ['created_by' => $adminId, 'is_used' => false, 'used_at' => null]
+                        );
+
+                        // If the student already has a submission, reset it so they can resubmit
+                        $existing = Submission::where('student_id', $record->id)
+                            ->where('task_id', $taskId)
+                            ->first();
+
+                        if ($existing) {
+                            // Reset the review completely
+                            if ($existing->review) {
+                                $existing->review->update([
+                                    'score'        => 0,
+                                    'comments'     => null,
+                                    'is_completed' => false,
+                                    'reviewed_at'  => null,
+                                ]);
+                            }
+
+                            // Reset submission so the resubmit button appears
+                            $existing->update([
+                                'status'          => SubmissionTypes::PENDING_REVIEW->value,
+                                'is_resubmission' => false,
+                            ]);
+                        }
+
+                        $task = Task::find($taskId);
+
+                        Log::info('Admin reopened task submission', [
+                            'event'                   => 'admin_reopened_submission',
+                            'student_id'              => $record->id,
+                            'task_id'                 => $taskId,
+                            'admin_id'                => $adminId,
+                            'had_existing_submission' => (bool) $existing,
+                        ]);
+
+                        Notification::make()
+                            ->title('Task Reopened')
+                            ->body("{$record->name} can now submit \"{$task?->title}\" past the deadline.")
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->defaultSort('submissions_count', 'desc');
     }
