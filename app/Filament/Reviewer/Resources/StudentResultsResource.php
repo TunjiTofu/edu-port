@@ -30,15 +30,14 @@ class StudentResultsResource extends Resource
     // FIX 1: was `return false` with the real logic commented out
     public static function canViewAny(): bool
     {
-        return false;
-//        $user = Auth::user();
-//        return $user && $user->isReviewer();
+        $user = Auth::user();
+        return $user && $user->isReviewer();
     }
 
     // FIX 2: was returning false — hidden from sidebar entirely
     public static function shouldRegisterNavigation(): bool
     {
-        return false;
+        return true;
     }
 
     public static function form(Form $form): Form
@@ -75,8 +74,13 @@ class StudentResultsResource extends Resource
                     ->label('Tasks Submitted')
                     ->alignCenter()->badge()->color('success')
                     ->getStateUsing(function (User $record): string {
+                        $programId = $record->enrollments()->latest('enrolled_at')->value('training_program_id');
                         $submitted = $record->submissions()->count();
-                        $total     = Task::where('is_active', 1)->count();
+                        $total     = $programId
+                            ? Task::where('is_active', 1)
+                                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                                ->count()
+                            : 0;
                         return "{$submitted}/{$total}";
                     }),
 
@@ -84,22 +88,34 @@ class StudentResultsResource extends Resource
                     ->label('Not Submitted')
                     ->alignCenter()->badge()->color('danger')
                     ->getStateUsing(function (User $record): int {
-                        $submitted = $record->submissions()->pluck('task_id')->toArray();
-                        return Task::where('is_active', 1)->whereNotIn('id', $submitted)->count();
+                        $programId    = $record->enrollments()->latest('enrolled_at')->value('training_program_id');
+                        $submittedIds = $record->submissions()->pluck('task_id')->toArray();
+                        return $programId
+                            ? Task::where('is_active', 1)
+                                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                                ->whereNotIn('id', $submittedIds)
+                                ->count()
+                            : 0;
                     }),
 
                 Tables\Columns\TextColumn::make('total_score')
                     ->label('Total Score')
                     ->alignCenter()->badge()->color('info')
                     ->getStateUsing(function (User $record): string {
-                        $studentScore = DB::table('submissions')
+                        $studentScore  = DB::table('submissions')
                             ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
                             ->where('submissions.student_id', $record->id)
                             ->whereNotNull('reviews.score')
                             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
 
-                        $totalMaxScore = DB::table('tasks')->where('is_active', 1)
-                            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?? 0;
+                        // Scope max score to the student's enrolled program
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
 
                         return round($studentScore, 1) . '/' . round($totalMaxScore, 1);
                     }),
@@ -142,8 +158,13 @@ class StudentResultsResource extends Resource
                             ->where('submissions.student_id', $record->id)
                             ->whereNotNull('reviews.score')
                             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
-                        $totalMaxScore = DB::table('tasks')->where('is_active', 1)
-                            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?? 0;
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
                         if ($totalMaxScore == 0) return '0/60';
                         $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
                         return number_format($scoreOutOf60, 1) . '/60';
@@ -154,8 +175,13 @@ class StudentResultsResource extends Resource
                             ->where('submissions.student_id', $record->id)
                             ->whereNotNull('reviews.score')
                             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
-                        $totalMaxScore = DB::table('tasks')->where('is_active', 1)
-                            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?? 0;
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
                         if ($totalMaxScore == 0 || $studentScore == 0) return 'gray';
                         $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
                         return match (true) {
@@ -211,26 +237,44 @@ class StudentResultsResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $totalMaxScore = DB::table('tasks')
-            ->where('is_active', 1)
-            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?: 1;
+        $reviewer = Auth::user();
 
         $query = parent::getEloquentQuery()
             ->where('users.role_id', Constants::STUDENT_ID)
+            // Active candidates only — exclude graduated and disqualified
+            ->whereNull('users.program_completed_at')
+            ->whereNull('users.disqualified_at')
             ->leftJoin('submissions', 'users.id', '=', 'submissions.student_id')
             ->leftJoin('reviews', 'submissions.id', '=', 'reviews.submission_id')
             ->selectRaw("users.*,
+                -- Per-student score percentage: denominator is scoped to the
+                -- tasks in the student's enrolled program only, not all programs.
                 (
                     COALESCE(SUM(CAST(reviews.score AS DECIMAL(10,2))), 0)
-                    / {$totalMaxScore} * 100
+                    /
+                    NULLIF((
+                        SELECT SUM(CAST(t.max_score AS DECIMAL(10,2)))
+                        FROM tasks t
+                        INNER JOIN sections s ON t.section_id = s.id
+                        INNER JOIN program_enrollments pe
+                            ON s.training_program_id = pe.training_program_id
+                        WHERE pe.student_id = users.id
+                          AND pe.deleted_at IS NULL
+                          AND t.is_active = 1
+                          AND t.deleted_at IS NULL
+                    ), 0)
+                    * 100
                 ) as calculated_score_percentage")
             ->groupBy('users.id')
             ->with(['church', 'district']);
 
-        // Reviewers only see candidates from their own district
-        $reviewer = Auth::user();
-        if ($reviewer && $reviewer->district_id) {
+        // Scope to reviewer's district.
+        // If the reviewer has no district_id set, show no results rather than
+        // accidentally exposing all candidates.
+        if ($reviewer?->district_id) {
             $query->where('users.district_id', $reviewer->district_id);
+        } else {
+            $query->whereRaw('1 = 0'); // no district configured — show nothing
         }
 
         return $query;
