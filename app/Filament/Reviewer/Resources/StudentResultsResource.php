@@ -30,14 +30,15 @@ class StudentResultsResource extends Resource
     // FIX 1: was `return false` with the real logic commented out
     public static function canViewAny(): bool
     {
-        $user = Auth::user();
-        return $user && $user->isReviewer();
+        return false;
+//        $user = Auth::user();
+//        return $user && $user->isReviewer();
     }
 
     // FIX 2: was returning false — hidden from sidebar entirely
     public static function shouldRegisterNavigation(): bool
     {
-        return true;
+        return false;
     }
 
     public static function form(Form $form): Form
