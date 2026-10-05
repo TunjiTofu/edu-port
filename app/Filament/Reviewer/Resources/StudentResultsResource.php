@@ -191,13 +191,7 @@ class StudentResultsResource extends Resource
                         };
                     }),
             ])
-            ->filters([
-                Tables\Filters\SelectFilter::make('church_id')
-                    ->relationship('church', 'name')
-                    ->preload(),
-                // District filter intentionally omitted —
-                // reviewers are already scoped to their own district in getEloquentQuery()
-            ])
+            ->filters([])
             ->actions([
                 Tables\Actions\Action::make('export_pdf')
                     ->label('Export PDF')
@@ -295,8 +289,17 @@ class StudentResultsResource extends Resource
         $student = User::with(['church', 'district', 'submissions.task.section', 'submissions.review'])
             ->find($student->id);
 
-        $allTasks    = Task::where('is_active', 1)->with('section')
-            ->orderBy('section_id')->orderBy('order_index')->get();
+        // Scope tasks to the student's enrolled program only —
+        // using all active tasks gives wrong totals when multiple programs exist.
+        $programId = $student->enrollments()->latest('enrolled_at')->value('training_program_id');
+
+        $allTasks = $programId
+            ? Task::where('is_active', 1)
+                ->whereHas('section', fn ($q) => $q->where('training_program_id', $programId))
+                ->with('section')
+                ->orderBy('section_id')->orderBy('order_index')
+                ->get()
+            : collect();
         $submissions = $student->submissions()->with(['task.section', 'review'])->get()->keyBy('task_id');
 
         $studentScore  = $submissions->sum(fn ($sub) => $sub->review?->score ?? 0);
