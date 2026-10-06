@@ -41,14 +41,13 @@ class TrainingProgramResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->required()
                             ->maxLength(255),
-                        // ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('code')
                             ->label('Program Code')
                             ->required()
                             ->unique(TrainingProgram::class, 'code', ignoreRecord: true)
-                            ->maxLength(20),
-//                            ->alphaNum(),
+                            ->maxLength(20)
+                            ->alphaNum(),
 
                         Forms\Components\FileUpload::make('image')
                             ->label('Program Image')
@@ -62,7 +61,7 @@ class TrainingProgramResource extends Resource
                                 '4:3',
                                 '1:1',
                             ])
-                            ->maxSize(2048) // 2MB max
+                            ->maxSize(2048)
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                             ->getUploadedFileNameForStorageUsing(
                                 fn (TemporaryUploadedFile $file): string =>
@@ -123,7 +122,7 @@ class TrainingProgramResource extends Resource
                             Forms\Components\TextInput::make('duration_display')
                                 ->label('Duration')
                                 ->readOnly()
-                                ->default('N/A')
+                                ->default('N/A'),
                         ];
                     })
                     ->columns(3),
@@ -153,6 +152,72 @@ class TrainingProgramResource extends Resource
                             ->default('both')
                             ->required(),
                     ])->columns(3),
+
+                // ── Scoring Configuration ─────────────────────────────────────────
+                Section::make('Scoring Configuration')
+                    ->description('Configure how portfolio and interview scores are weighted and what cutoffs determine candidate progression.')
+                    ->icon('heroicon-o-scale')
+                    ->schema([
+                        // ── Weights ──────────────────────────────────────────────
+                        Forms\Components\TextInput::make('portfolio_weight')
+                            ->label('Portfolio Weight (%)')
+                            ->helperText('Percentage of the total score allocated to the portfolio submission.')
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(99)
+                            ->default(60)
+                            ->suffix('%')
+                            ->live()
+                            ->required()
+                            ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                // Keep interview_weight in sync so they always sum to 100
+                                $portfolio = (float) $state;
+                                if ($portfolio >= 1 && $portfolio <= 99) {
+                                    $set('interview_weight', round(100 - $portfolio, 2));
+                                }
+                            }),
+
+                        Forms\Components\TextInput::make('interview_weight')
+                            ->label('Interview Weight (%)')
+                            ->helperText('Percentage of the total score allocated to the interview. Auto-calculated from Portfolio Weight.')
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(99)
+                            ->default(40)
+                            ->suffix('%')
+                            ->live()
+                            ->required()
+                            ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                                // Reverse sync — updating interview adjusts portfolio
+                                $interview = (float) $state;
+                                if ($interview >= 1 && $interview <= 99) {
+                                    $set('portfolio_weight', round(100 - $interview, 2));
+                                }
+                            }),
+
+                        // ── Cutoff marks ─────────────────────────────────────────
+                        Forms\Components\TextInput::make('portfolio_cutoff')
+                            ->label('Portfolio Cutoff (%)')
+                            ->helperText('Minimum portfolio percentage a candidate must achieve to qualify for interview. Leave blank to disable.')
+                            ->numeric()
+                            ->minValue(0)
+                            ->maxValue(100)
+                            ->nullable()
+                            ->suffix('%')
+                            ->placeholder('e.g. 60'),
+
+                        Forms\Components\TextInput::make('total_cutoff')
+                            ->label('Total Score Cutoff (%)')
+                            ->helperText('Minimum combined score (out of 100) a candidate must achieve to qualify for investiture. Leave blank to disable.')
+                            ->numeric()
+                            ->minValue(0)
+                            ->maxValue(100)
+                            ->nullable()
+                            ->suffix('%')
+                            ->placeholder('e.g. 50'),
+                    ])
+                    ->columns(2)
+                    ->collapsible(),
             ]);
     }
 
@@ -166,7 +231,7 @@ class TrainingProgramResource extends Resource
                     ->visibility('private')
                     ->circular()
                     ->size(40)
-                    ->defaultImageUrl('/images/logo.png'),
+                    ->defaultImageUrl('/images/default-program.png'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
@@ -211,6 +276,24 @@ class TrainingProgramResource extends Resource
                     ->boolean()
                     ->label('Active'),
 
+                Tables\Columns\TextColumn::make('portfolio_weight')
+                    ->label('Weights')
+                    ->formatStateUsing(fn ($record) => "{$record->portfolio_weight}% / {$record->interview_weight}%")
+                    ->description('Portfolio / Interview')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('portfolio_cutoff')
+                    ->label('Cutoffs')
+                    ->formatStateUsing(fn ($record) =>
+                        ($record->portfolio_cutoff ? $record->portfolio_cutoff . '%' : '—') .
+                        ' / ' .
+                        ($record->total_cutoff ? $record->total_cutoff . '%' : '—')
+                    )
+                    ->description('Portfolio / Total')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -232,11 +315,11 @@ class TrainingProgramResource extends Resource
                         return $query
                             ->when(
                                 $data['start_from'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('start_date', '>=', $date),
+                                fn (Builder $query, $date): Builder => $query->whereDate('start_date', '>=', $date),
                             )
                             ->when(
                                 $data['start_until'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('start_date', '<=', $date),
+                                fn (Builder $query, $date): Builder => $query->whereDate('start_date', '<=', $date),
                             );
                     }),
             ])
@@ -245,7 +328,6 @@ class TrainingProgramResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (TrainingProgram $record) {
-                        // Prevent deletion if there are enrolled students
                         if ($record->students()->exists()) {
                             Notification::make()
                                 ->title('Request Denied')
@@ -256,7 +338,6 @@ class TrainingProgramResource extends Resource
                             throw new Halt();
                         }
 
-                        // Prevent deletion of last admin
                         if (TrainingProgram::count() <= 1) {
                             Notification::make()
                                 ->title('Request Denied')
@@ -267,14 +348,13 @@ class TrainingProgramResource extends Resource
                             throw new Halt();
                         }
                     }),
-                Tables\Actions\ForceDeleteAction::make(), // Permanent delete
-                Tables\Actions\RestoreAction::make(), // Restore soft-deleted
+                Tables\Actions\ForceDeleteAction::make(),
+                Tables\Actions\RestoreAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->before(function ($records) {
-                            // Prevent deletion if there are enrolled students in any of the selected records
                             $records->each(function (TrainingProgram $record) {
                                 if ($record->students()->exists()) {
                                     Notification::make()
@@ -287,8 +367,6 @@ class TrainingProgramResource extends Resource
                                 }
                             });
 
-
-                            // Prevent deletion of last training program
                             $TrainingCount = TrainingProgram::count();
                             $selectedRecords = $records->count();
                             if ($TrainingCount - $selectedRecords < 1) {
@@ -302,35 +380,6 @@ class TrainingProgramResource extends Resource
                             }
                         }),
                 ]),
-                // Tables\Actions\ForceDeleteBulkAction::make()
-                //     ->before(function ($records) {
-                //         // Prevent deletion if there are enrolled students in any of the selected records
-                //         $records->each(function (TrainingProgram $record) {
-                //             if ($record->students()->exists()) {
-                //                 Notification::make()
-                //                     ->title('Request Denied')
-                //                     ->body('Cannot delete training program with enrolled students.')
-                //                     ->danger()
-                //                     ->persistent()
-                //                     ->send();
-                //                 throw new Halt();
-                //             }
-                //         });
-
-
-                //         // Prevent deletion of last training program
-                //         $TrainingCount = TrainingProgram::count();
-                //         $selectedRecords = $records->count();
-                //         if ($TrainingCount - $selectedRecords < 1) {
-                //             Notification::make()
-                //                 ->title('Request Denied')
-                //                 ->body('You cannot delete the last training program')
-                //                 ->danger()
-                //                 ->persistent()
-                //                 ->send();
-                //             throw new Halt();
-                //         }
-                //     }),
                 Tables\Actions\RestoreBulkAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
@@ -338,33 +387,30 @@ class TrainingProgramResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListTrainingPrograms::route('/'),
+            'index'  => Pages\ListTrainingPrograms::route('/'),
             'create' => Pages\CreateTrainingProgram::route('/create'),
-            'view' => Pages\ViewTrainingProgram::route('/{record}'),
-            'edit' => Pages\EditTrainingProgram::route('/{record}/edit'),
+            'view'   => Pages\ViewTrainingProgram::route('/{record}'),
+            'edit'   => Pages\EditTrainingProgram::route('/{record}/edit'),
         ];
     }
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->withCount(['students', 'sections'])->withoutGlobalScopes([
-            SoftDeletingScope::class,
-        ]);
+        return parent::getEloquentQuery()
+            ->withCount(['students', 'sections'])
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
-
 
     protected function calculateDuration(Forms\Get $get, Forms\Set $set): void
     {
         $start = $get('start_date');
-        $end = $get('end_date');
+        $end   = $get('end_date');
 
         if ($start && $end) {
             $weeks = \Carbon\Carbon::parse($start)->diffInWeeks(\Carbon\Carbon::parse($end));

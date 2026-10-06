@@ -27,14 +27,12 @@ class StudentResultsResource extends Resource
     protected static ?string $modelLabel       = 'Intending MG Result';
     protected static ?string $pluralModelLabel = 'Intending MGs Results';
 
-    // FIX 1: was `return false` with the real logic commented out
     public static function canViewAny(): bool
     {
         $user = Auth::user();
         return $user && $user->isReviewer();
     }
 
-    // FIX 2: was returning false — hidden from sidebar entirely
     public static function shouldRegisterNavigation(): bool
     {
         return true;
@@ -98,17 +96,17 @@ class StudentResultsResource extends Resource
                             : 0;
                     }),
 
+                // ── Portfolio score ────────────────────────────────────────
                 Tables\Columns\TextColumn::make('total_score')
-                    ->label('Total Score')
+                    ->label('Portfolio Raw')
                     ->alignCenter()->badge()->color('info')
                     ->getStateUsing(function (User $record): string {
-                        $studentScore  = DB::table('submissions')
+                        $studentScore = DB::table('submissions')
                             ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
                             ->where('submissions.student_id', $record->id)
                             ->whereNotNull('reviews.score')
                             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
 
-                        // Scope max score to the student's enrolled program
                         $totalMaxScore = DB::table('tasks')
                             ->join('sections', 'tasks.section_id', '=', 'sections.id')
                             ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
@@ -121,26 +119,44 @@ class StudentResultsResource extends Resource
                     }),
 
                 Tables\Columns\TextColumn::make('calculated_score_percentage')
-                    ->label('Score /100')
+                    ->label('Portfolio %')
                     ->alignCenter()->badge()->sortable()
                     ->getStateUsing(function (User $record): string {
                         if (isset($record->calculated_score_percentage)) {
-                            return number_format($record->calculated_score_percentage, 1) . '/100';
+                            return number_format($record->calculated_score_percentage, 1) . '%';
                         }
                         $studentScore  = DB::table('submissions')
                             ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
                             ->where('submissions.student_id', $record->id)
                             ->whereNotNull('reviews.score')
                             ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
-                        $totalMaxScore = DB::table('tasks')->where('is_active', 1)
-                            ->sum(DB::raw('CAST(max_score AS DECIMAL(10,2))')) ?? 0;
-                        if ($totalMaxScore == 0) return '0/100';
-                        return number_format(($studentScore / $totalMaxScore) * 100, 1) . '/100';
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
+                        if ($totalMaxScore == 0) return '0%';
+                        return number_format(($studentScore / $totalMaxScore) * 100, 1) . '%';
                     })
                     ->color(function (User $record): string {
+                        // Colour vs portfolio_cutoff from the student's enrolled programme
+                        $programCutoff = DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->value('training_programs.portfolio_cutoff');
+
                         $pct = isset($record->calculated_score_percentage)
-                            ? $record->calculated_score_percentage
+                            ? (float) $record->calculated_score_percentage
                             : 0;
+
+                        if ($programCutoff !== null) {
+                            return $pct >= (float) $programCutoff ? 'success' : 'danger';
+                        }
+
                         return match (true) {
                             $pct >= 75 => 'success',
                             $pct >= 50 => 'warning',
@@ -149,10 +165,18 @@ class StudentResultsResource extends Resource
                         };
                     }),
 
-                Tables\Columns\TextColumn::make('score_out_of_60')
-                    ->label('Score /60')
+                Tables\Columns\TextColumn::make('score_out_of_weight')
+                    ->label('Portfolio /wt')
                     ->alignCenter()->badge()
                     ->getStateUsing(function (User $record): string {
+                        // Fetch weight from enrolled programme
+                        $portfolioWeight = (float) (DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->value('training_programs.portfolio_weight') ?? 60);
+
                         $studentScore  = DB::table('submissions')
                             ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
                             ->where('submissions.student_id', $record->id)
@@ -165,11 +189,19 @@ class StudentResultsResource extends Resource
                             ->whereNull('program_enrollments.deleted_at')
                             ->where('tasks.is_active', 1)
                             ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
-                        if ($totalMaxScore == 0) return '0/60';
-                        $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
-                        return number_format($scoreOutOf60, 1) . '/60';
+
+                        if ($totalMaxScore == 0) return "0/{$portfolioWeight}";
+                        $scaled = round(($studentScore / $totalMaxScore) * $portfolioWeight, 1);
+                        return "{$scaled}/{$portfolioWeight}";
                     })
                     ->color(function (User $record): string {
+                        $portfolioWeight = (float) (DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->value('training_programs.portfolio_weight') ?? 60);
+
                         $studentScore  = DB::table('submissions')
                             ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
                             ->where('submissions.student_id', $record->id)
@@ -182,12 +214,147 @@ class StudentResultsResource extends Resource
                             ->whereNull('program_enrollments.deleted_at')
                             ->where('tasks.is_active', 1)
                             ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
+
                         if ($totalMaxScore == 0 || $studentScore == 0) return 'gray';
-                        $scoreOutOf60 = (($studentScore / $totalMaxScore) * 100 / 100) * 60;
+                        $scaled = ($studentScore / $totalMaxScore) * $portfolioWeight;
+                        $threshold75 = $portfolioWeight * 0.75;
+                        $threshold50 = $portfolioWeight * 0.50;
                         return match (true) {
-                            $scoreOutOf60 >= 45 => 'success',
-                            $scoreOutOf60 >= 30 => 'warning',
-                            default             => 'danger',
+                            $scaled >= $threshold75 => 'success',
+                            $scaled >= $threshold50 => 'warning',
+                            default                 => 'danger',
+                        };
+                    }),
+
+                // ── Interview score ────────────────────────────────────────
+                Tables\Columns\TextColumn::make('interview_score_display')
+                    ->label('Interview /wt')
+                    ->alignCenter()->badge()
+                    ->getStateUsing(function (User $record): string {
+                        // Only visible when the admin has published the score
+                        if (! $record->interview_score_published) {
+                            return 'Pending';
+                        }
+                        if ($record->interview_score === null) {
+                            return 'Not set';
+                        }
+
+                        $interviewWeight = (float) (DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->value('training_programs.interview_weight') ?? 40);
+
+                        $contribution = round((float) $record->interview_score * ($interviewWeight / 100), 1);
+                        return "{$contribution}/{$interviewWeight}";
+                    })
+                    ->color(function (User $record): string {
+                        if (! $record->interview_score_published || $record->interview_score === null) {
+                            return 'gray';
+                        }
+                        $interviewWeight = (float) (DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->value('training_programs.interview_weight') ?? 40);
+
+                        $contribution = (float) $record->interview_score * ($interviewWeight / 100);
+                        return match (true) {
+                            $contribution >= $interviewWeight * 0.75 => 'success',
+                            $contribution >= $interviewWeight * 0.50 => 'warning',
+                            default                                   => 'danger',
+                        };
+                    }),
+
+                // ── Combined total /100 ────────────────────────────────────
+                Tables\Columns\TextColumn::make('total_combined_score')
+                    ->label('Total /100')
+                    ->alignCenter()->badge()
+                    ->getStateUsing(function (User $record): string {
+                        if (! $record->interview_score_published || $record->interview_score === null) {
+                            return 'Pending';
+                        }
+
+                        $config = DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->select(['training_programs.portfolio_weight', 'training_programs.interview_weight'])
+                            ->first();
+
+                        $portfolioWeight = (float) ($config?->portfolio_weight ?? 60);
+                        $interviewWeight = (float) ($config?->interview_weight ?? 40);
+
+                        $studentScore  = DB::table('submissions')
+                            ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
+                            ->where('submissions.student_id', $record->id)
+                            ->whereNotNull('reviews.score')
+                            ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
+
+                        $portfolioPct          = $totalMaxScore > 0 ? ($studentScore / $totalMaxScore) * 100 : 0;
+                        $portfolioContribution = $portfolioPct * ($portfolioWeight / 100);
+                        $interviewContribution = (float) $record->interview_score * ($interviewWeight / 100);
+                        $total = round($portfolioContribution + $interviewContribution, 1);
+
+                        return "{$total}/100";
+                    })
+                    ->color(function (User $record): string {
+                        if (! $record->interview_score_published || $record->interview_score === null) {
+                            return 'gray';
+                        }
+
+                        $config = DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->select([
+                                'training_programs.portfolio_weight',
+                                'training_programs.interview_weight',
+                                'training_programs.total_cutoff',
+                            ])
+                            ->first();
+
+                        $portfolioWeight = (float) ($config?->portfolio_weight ?? 60);
+                        $interviewWeight = (float) ($config?->interview_weight ?? 40);
+                        $totalCutoff     = $config?->total_cutoff !== null ? (float) $config->total_cutoff : null;
+
+                        $studentScore  = DB::table('submissions')
+                            ->join('reviews', 'submissions.id', '=', 'reviews.submission_id')
+                            ->where('submissions.student_id', $record->id)
+                            ->whereNotNull('reviews.score')
+                            ->sum(DB::raw('CAST(reviews.score AS DECIMAL(10,2))')) ?? 0;
+                        $totalMaxScore = DB::table('tasks')
+                            ->join('sections', 'tasks.section_id', '=', 'sections.id')
+                            ->join('program_enrollments', 'sections.training_program_id', '=', 'program_enrollments.training_program_id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->where('tasks.is_active', 1)
+                            ->sum(DB::raw('CAST(tasks.max_score AS DECIMAL(10,2))')) ?? 0;
+
+                        $portfolioPct          = $totalMaxScore > 0 ? ($studentScore / $totalMaxScore) * 100 : 0;
+                        $portfolioContribution = $portfolioPct * ($portfolioWeight / 100);
+                        $interviewContribution = (float) $record->interview_score * ($interviewWeight / 100);
+                        $total = $portfolioContribution + $interviewContribution;
+
+                        if ($totalCutoff !== null) {
+                            return $total >= $totalCutoff ? 'success' : 'danger';
+                        }
+
+                        return match (true) {
+                            $total >= 75 => 'success',
+                            $total >= 50 => 'warning',
+                            default      => 'danger',
                         };
                     }),
             ])
@@ -199,9 +366,6 @@ class StudentResultsResource extends Resource
                     ->color('danger')
                     ->action(fn (User $record) => static::exportStudentPdf($record)),
             ])
-            // FIX 3: defaultSort('calculated_score_percentage', 'desc') caused a 30-second
-            // timeout in the admin panel because the alias isn't available when Filament
-            // applies defaultSort before getEloquentQuery() merges it. Use a subquery closure.
             ->defaultSort(function ($query) {
                 $query->orderByRaw("(
                     COALESCE((
@@ -213,7 +377,12 @@ class StudentResultsResource extends Resource
                     /
                     NULLIF((
                         SELECT SUM(CAST(t.max_score AS DECIMAL(10,2)))
-                        FROM tasks t WHERE t.is_active = 1
+                        FROM tasks t
+                        INNER JOIN sections sec ON t.section_id = sec.id
+                        INNER JOIN program_enrollments pe ON sec.training_program_id = pe.training_program_id
+                        WHERE pe.student_id = users.id
+                          AND pe.deleted_at IS NULL
+                          AND t.is_active = 1
                     ), 0)
                     * 100
                 ) DESC");
@@ -235,14 +404,11 @@ class StudentResultsResource extends Resource
 
         $query = parent::getEloquentQuery()
             ->where('users.role_id', Constants::STUDENT_ID)
-            // Active candidates only — exclude graduated and disqualified
             ->whereNull('users.program_completed_at')
             ->whereNull('users.disqualified_at')
             ->leftJoin('submissions', 'users.id', '=', 'submissions.student_id')
             ->leftJoin('reviews', 'submissions.id', '=', 'reviews.submission_id')
             ->selectRaw("users.*,
-                -- Per-student score percentage: denominator is scoped to the
-                -- tasks in the student's enrolled program only, not all programs.
                 (
                     COALESCE(SUM(CAST(reviews.score AS DECIMAL(10,2))), 0)
                     /
@@ -262,13 +428,10 @@ class StudentResultsResource extends Resource
             ->groupBy('users.id')
             ->with(['church', 'district']);
 
-        // Scope to reviewer's district.
-        // If the reviewer has no district_id set, show no results rather than
-        // accidentally exposing all candidates.
         if ($reviewer?->district_id) {
             $query->where('users.district_id', $reviewer->district_id);
         } else {
-            $query->whereRaw('1 = 0'); // no district configured — show nothing
+            $query->whereRaw('1 = 0');
         }
 
         return $query;
@@ -289,9 +452,19 @@ class StudentResultsResource extends Resource
         $student = User::with(['church', 'district', 'submissions.task.section', 'submissions.review'])
             ->find($student->id);
 
-        // Scope tasks to the student's enrolled program only —
-        // using all active tasks gives wrong totals when multiple programs exist.
         $programId = $student->enrollments()->latest('enrolled_at')->value('training_program_id');
+
+        // Load programme scoring config
+        $programConfig = $programId
+            ? DB::table('training_programs')->where('id', $programId)
+                ->select(['portfolio_weight', 'interview_weight', 'portfolio_cutoff', 'total_cutoff'])
+                ->first()
+            : null;
+
+        $portfolioWeight = (float) ($programConfig?->portfolio_weight ?? 60);
+        $interviewWeight = (float) ($programConfig?->interview_weight ?? 40);
+        $portfolioCutoff = $programConfig?->portfolio_cutoff !== null ? (float) $programConfig->portfolio_cutoff : null;
+        $totalCutoff     = $programConfig?->total_cutoff     !== null ? (float) $programConfig->total_cutoff     : null;
 
         $allTasks = $programId
             ? Task::where('is_active', 1)
@@ -300,11 +473,22 @@ class StudentResultsResource extends Resource
                 ->orderBy('section_id')->orderBy('order_index')
                 ->get()
             : collect();
+
         $submissions = $student->submissions()->with(['task.section', 'review'])->get()->keyBy('task_id');
 
         $studentScore  = $submissions->sum(fn ($sub) => $sub->review?->score ?? 0);
         $totalMaxScore = $allTasks->sum('max_score');
         $percentage    = $totalMaxScore > 0 ? ($studentScore / $totalMaxScore) * 100 : 0;
+
+        // Interview score (only if published)
+        $interviewScoreRaw     = $student->interview_score_published ? $student->interview_score : null;
+        $interviewContribution = $interviewScoreRaw !== null
+            ? round((float) $interviewScoreRaw * ($interviewWeight / 100), 1)
+            : null;
+        $portfolioContribution = round($percentage * ($portfolioWeight / 100), 1);
+        $totalScore            = $interviewContribution !== null
+            ? round($portfolioContribution + $interviewContribution, 1)
+            : null;
 
         $sections = [];
         foreach ($allTasks->groupBy('section_id') as $sectionId => $sectionTasks) {
@@ -358,14 +542,23 @@ class StudentResultsResource extends Resource
                 'district' => $student->district?->name,
             ],
             'summary' => [
-                'total_tasks'         => $allTasks->count(),
-                'submitted_count'     => $submissions->count(),
-                'not_submitted_count' => count($notSubmittedTasks),
-                'total_score'         => $studentScore,
-                'max_score'           => $totalMaxScore,
-                'percentage'          => $percentage,
-                'score_out_of_100'    => $percentage,
-                'score_out_of_60'     => ($percentage / 100) * 60,
+                'total_tasks'              => $allTasks->count(),
+                'submitted_count'          => $submissions->count(),
+                'not_submitted_count'      => count($notSubmittedTasks),
+                'total_score'              => $studentScore,
+                'max_score'                => $totalMaxScore,
+                'percentage'               => $percentage,
+                'portfolio_weight'         => $portfolioWeight,
+                'interview_weight'         => $interviewWeight,
+                'portfolio_cutoff'         => $portfolioCutoff,
+                'total_cutoff'             => $totalCutoff,
+                'score_out_of_100'         => $percentage,
+                'portfolio_contribution'   => $portfolioContribution,
+                'interview_score_raw'      => $interviewScoreRaw,
+                'interview_contribution'   => $interviewContribution,
+                'total_combined'           => $totalScore,
+                'portfolio_qualifies'      => $portfolioCutoff !== null ? $percentage >= $portfolioCutoff : null,
+                'investiture_qualifies'    => ($totalCutoff !== null && $totalScore !== null) ? $totalScore >= $totalCutoff : null,
             ],
             'sections'            => $sections,
             'submitted_tasks'     => $submittedTasks,
