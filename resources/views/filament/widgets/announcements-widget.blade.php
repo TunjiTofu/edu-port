@@ -24,7 +24,7 @@
                                 <h3 class="text-sm font-semibold text-gray-900 dark:text-white leading-tight mb-1">
                                     {{ $announcement->title }}
                                 </h3>
-                                <div class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                                <div class="text-sm text-gray-600 dark:text-white-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none">
                                     {!! $announcement->body !!}
                                 </div>
                             </div>

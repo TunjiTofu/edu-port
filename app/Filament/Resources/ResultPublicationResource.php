@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ResultPublicationResource\Pages;
 use App\Models\ResultPublication;
 use App\Models\Task;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -104,6 +105,54 @@ class ResultPublicationResource extends Resource
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->headerActions([
+                // ── Interview score publish / unpublish (affects all active candidates) ──
+                Tables\Actions\Action::make('publish_interview_scores')
+                    ->label('Publish Interview Scores')
+                    ->icon('heroicon-o-eye')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Publish Interview Scores?')
+                    ->modalDescription('All active candidates who have an interview score set will be able to see it. This does not affect portfolio results.')
+                    ->modalSubmitActionLabel('Yes, Publish')
+                    ->action(function () {
+                        $count = User::query()
+                            ->whereHas('role', fn ($q) => $q->where('name', \App\Enums\RoleTypes::STUDENT->value))
+                            ->where('is_active', true)
+                            ->whereNull('disqualified_at')
+                            ->whereNull('program_completed_at')
+                            ->whereNotNull('interview_score')
+                            ->where('interview_score_published', false)
+                            ->update(['interview_score_published' => true]);
+
+                        Notification::make()
+                            ->title('Interview scores published')
+                            ->body("Score released for {$count} candidate(s).")
+                            ->success()
+                            ->send();
+                    }),
+
+                Tables\Actions\Action::make('unpublish_interview_scores')
+                    ->label('Unpublish Interview Scores')
+                    ->icon('heroicon-o-eye-slash')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Unpublish Interview Scores?')
+                    ->modalDescription('Interview scores will be hidden from all candidates, reviewers, and observers immediately.')
+                    ->modalSubmitActionLabel('Yes, Unpublish')
+                    ->action(function () {
+                        $count = User::query()
+                            ->whereHas('role', fn ($q) => $q->where('name', \App\Enums\RoleTypes::STUDENT->value))
+                            ->where('interview_score_published', true)
+                            ->update(['interview_score_published' => false]);
+
+                        Notification::make()
+                            ->title('Interview scores unpublished')
+                            ->body("Score hidden for {$count} candidate(s).")
+                            ->warning()
+                            ->send();
+                    }),
             ])
             ->filters([
                 TernaryFilter::make('is_published')->label('Published Status'),
