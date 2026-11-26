@@ -28,6 +28,38 @@ class ViewUser extends ViewRecord
         return [
             Actions\EditAction::make(),
 
+            // ── Interview Score ────────────────────────────────────────────
+            Actions\Action::make('interview_score')
+                ->label('Interview Score')
+                ->icon('heroicon-o-pencil-square')
+                ->color('primary')
+                ->visible(fn () => $this->record->isStudent())
+                ->fillForm(fn () => ['interview_score' => $this->record->interview_score])
+                ->form([
+                    Forms\Components\TextInput::make('interview_score')
+                        ->label('Interview Score (%)')
+                        ->numeric()
+                        ->minValue(0)
+                        ->maxValue(100)
+                        ->suffix('%')
+                        ->step(0.01)
+                        ->placeholder('0.00')
+                        ->helperText('Enter as a percentage (0 – 100). Leave blank to clear the score.'),
+                ])
+                ->modalHeading('Set Interview Score')
+                ->modalDescription('Enter the candidate\'s interview score as a percentage.')
+                ->modalSubmitActionLabel('Save Score')
+                ->action(function (array $data) {
+                    $this->record->update(['interview_score' => $data['interview_score']]);
+                    $this->record->refresh();
+                    Log::info('Admin: interview score set', [
+                        'admin_id' => Auth::id(),
+                        'user_id'  => $this->record->id,
+                        'score'    => $data['interview_score'],
+                    ]);
+                    Notification::make()->title('Interview score saved')->success()->send();
+                }),
+
             Actions\Action::make('graduate')
                 ->label('Mark as Graduated')
                 ->icon('heroicon-o-academic-cap')->color('success')
@@ -210,6 +242,28 @@ class ViewUser extends ViewRecord
                                     ->boolean(),
                             ]),
                     ]),
+
+                // ── Interview Score ───────────────────────────────────────
+                Section::make('Interview Score')
+                    ->schema([
+                        Grid::make(['default' => 1, 'sm' => 3])
+                            ->schema([
+                                TextEntry::make('interview_score')
+                                    ->label('Score')
+                                    ->suffix('%')
+                                    ->placeholder('Not set')
+                                    ->formatStateUsing(fn ($state) => $state !== null ? number_format((float) $state, 2) : null),
+
+                                IconEntry::make('interview_score_published')
+                                    ->label('Published to Candidates')
+                                    ->boolean()
+                                    ->trueIcon('heroicon-o-eye')
+                                    ->falseIcon('heroicon-o-eye-slash')
+                                    ->trueColor('success')
+                                    ->falseColor('gray'),
+                            ]),
+                    ])
+                    ->visible(fn ($record) => $record->isStudent()),
 
                 // ── Account information ───────────────────────────────────
                 Section::make('Account Information')

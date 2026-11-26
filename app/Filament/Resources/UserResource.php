@@ -21,6 +21,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -108,6 +109,50 @@ class UserResource extends Resource
                             ->helperText('Inactive accounts cannot log in to any panel.'),
                     ])
                     ->columns(2),
+
+                Section::make('Interview Score')
+                    ->description('Enter the candidate\'s interview result. Only visible to reviewers and the candidate once published.')
+                    ->icon('heroicon-o-microphone')
+                    ->schema(function ($record) {
+                        // Look up the programme's interview weight to set the max dynamically
+                        $max = 100;
+                        if ($record) {
+                            $program = \Illuminate\Support\Facades\DB::table('program_enrollments')
+                                ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                                ->where('program_enrollments.student_id', $record->id)
+                                ->whereNull('program_enrollments.deleted_at')
+                                ->latest('program_enrollments.enrolled_at')
+                                ->value('training_programs.interview_weight');
+                            if ($program) {
+                                $max = (float) $program;
+                            }
+                        }
+
+                        return [
+                            Forms\Components\TextInput::make('interview_score')
+                                ->label("Interview Score (out of {$max})")
+                                ->helperText("Enter the candidate's raw interview score. Maximum is {$max}.")
+                                ->numeric()
+                                ->minValue(0)
+                                ->maxValue($max)
+                                ->nullable()
+                                ->suffix("/ {$max}")
+                                ->placeholder("0 – {$max}")
+                                ->step(0.01),
+
+                            Forms\Components\Toggle::make('interview_score_published')
+                                ->label('Publish Score')
+                                ->helperText('When enabled, the score becomes visible to the candidate, reviewer, and observer panels immediately.')
+                                ->default(false)
+                                ->onColor('success')
+                                ->offColor('danger')
+                                ->onIcon('heroicon-m-eye')
+                                ->offIcon('heroicon-m-eye-slash'),
+                        ];
+                    })
+                    ->columns(2)
+                    ->visible(fn ($record) => $record && $record->role_id === \App\Services\Utility\Constants::STUDENT_ID)
+                    ->collapsible(),
             ]);
     }
 
@@ -300,6 +345,49 @@ class UserResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make()->iconButton(),
                 Tables\Actions\EditAction::make()->iconButton(),
+
+                // ── Interview Score ───────────────────────────────────────
+                Tables\Actions\Action::make('interview_score')
+                    ->label('Interview Score')
+                    ->icon('heroicon-o-microphone')
+                    ->color('primary')->iconButton()
+                    ->tooltip('Set Interview Score')
+                    ->visible(fn (User $record) => $record->isStudent() && $record->is_active && ! $record->isDisqualified() && ! $record->hasCompletedProgram())
+                    ->fillForm(fn (User $record) => ['interview_score' => $record->interview_score])
+                    ->form(function (User $record) {
+                        $program = \Illuminate\Support\Facades\DB::table('program_enrollments')
+                            ->join('training_programs', 'program_enrollments.training_program_id', '=', 'training_programs.id')
+                            ->where('program_enrollments.student_id', $record->id)
+                            ->whereNull('program_enrollments.deleted_at')
+                            ->latest('program_enrollments.enrolled_at')
+                            ->select('training_programs.interview_weight')
+                            ->first();
+
+                        $max = $program ? (float) $program->interview_weight : 100;
+
+                        return [
+                            Forms\Components\TextInput::make('interview_score')
+                                ->label("Interview Score (out of {$max})")
+                                ->numeric()
+                                ->minValue(0)
+                                ->maxValue($max)
+                                ->suffix("/ {$max}")
+                                ->step(0.01)
+                                ->placeholder("0 – {$max}")
+                                ->helperText("Maximum score for this programme is {$max}."),
+                        ];
+                    })
+                    ->modalHeading(fn (User $record) => "Interview Score — {$record->name}")
+                    ->modalSubmitActionLabel('Save Score')
+                    ->action(function (User $record, array $data) {
+                        $record->update(['interview_score' => $data['interview_score']]);
+                        Log::info('Admin: interview score set', [
+                            'admin_id' => Auth::id(),
+                            'user_id'  => $record->id,
+                            'score'    => $data['interview_score'],
+                        ]);
+                        Notification::make()->title('Interview score saved')->success()->send();
+                    }),
 
                 // ── Graduate / Ungraduate ─────────────────────────────────
                 Tables\Actions\Action::make('graduate')

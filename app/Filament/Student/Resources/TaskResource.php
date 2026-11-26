@@ -6,10 +6,10 @@ use App\Enums\SubmissionTypes;
 use App\Filament\Student\Resources\TaskResource\Pages;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use App\Models\Submission;
+use App\Models\SubmissionDeadlineOverride;
 use App\Models\Task;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Wizard;
@@ -223,8 +223,7 @@ class TaskResource extends Resource
                     ->form(fn () => static::submissionWizard())
                     ->action(fn ($record, $data) => static::handleSubmission($record, $data)),
 
-                // Resubmit — pending_review AND never been through revision cycle
-                // (is_resubmission=false means first submission, not yet reviewed)
+                // Resubmit — pending_review (not yet picked up by reviewer)
                 Tables\Actions\Action::make('resubmit')
                     ->label('Resubmit')
                     ->icon('heroicon-o-arrow-path')
@@ -232,7 +231,6 @@ class TaskResource extends Resource
                     ->color('warning')
                     ->visible(fn ($record) =>
                         $record->submissions->first()?->status === SubmissionTypes::PENDING_REVIEW->value
-                        && ! $record->submissions->first()?->is_resubmission
                     )
                     ->requiresConfirmation()
                     ->modalHeading('Replace Your Submission?')
@@ -410,10 +408,7 @@ class TaskResource extends Resource
                             ->acceptedFileTypes([
                                 'application/pdf',
                             ])
-                            // ── FIX: Match the server's PHP upload_max_filesize (2 MB on production).
-                            // Livewire validates this client-side BEFORE sending to the server, so the
-                            // user sees a friendly message instead of the cryptic UUID "failed to upload"
-                            // error that appears when PHP's limit rejects the request.
+                            // FIX: Match the server's PHP upload_max_filesize (2 MB on production).
                             ->maxSize(2048)
                             ->required()
                             ->directory('submissions/temp')
@@ -445,7 +440,7 @@ class TaskResource extends Resource
                             ->label('Your notes')
                             ->content(fn ($get) => $get('notes') ?: 'None'),
 
-                        Checkbox::make('confirm_submission')
+                        \Filament\Forms\Components\Checkbox::make('confirm_submission')
                             ->label('I confirm this is my own original work and I am ready to submit.')
                             ->required()
                             ->accepted(),
@@ -465,10 +460,11 @@ class TaskResource extends Resource
             'ip'           => request()->ip(),
         ];
 
-        // FIX: compare against end of the due date, not the exact stored time
-        // (which is usually midnight). This allows submissions until 11:59 PM
-        // on the due date itself, matching the badge display logic.
-        if ($record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
+        // FIX: compare against end of the due date, not the exact stored time.
+        // Also bypass if admin has granted a deadline override for this student+task.
+        $hasOverride = SubmissionDeadlineOverride::hasActive(Auth::id(), $record->id);
+
+        if (! $hasOverride && $record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
             Log::warning('Submission: blocked — task overdue', array_merge($context, [
                 'event'    => 'submission_blocked_overdue',
                 'due_date' => $record->due_date->toDateTimeString(),
@@ -522,9 +518,17 @@ class TaskResource extends Resource
                 'status'        => SubmissionTypes::PENDING_REVIEW->value,
             ]);
 
+            // Consume the override if one was granted by the admin
+            if ($hasOverride) {
+                SubmissionDeadlineOverride::where('student_id', Auth::id())
+                    ->where('task_id', $record->id)
+                    ->first()?->markAsUsed();
+            }
+
             Log::info('Submission: success', array_merge($context, [
                 'event'         => 'submission_success',
                 'submission_id' => $submission->id,
+                'override_used' => $hasOverride,
             ]));
 
             Notification::make()
@@ -545,10 +549,7 @@ class TaskResource extends Resource
      */
     public static function handleResubmission(Task $record, array $data): void
     {
-        // FIX: If the submission was sent back for revision, the reviewer
-        // already evaluated it after the deadline — the student must be
-        // allowed to resubmit regardless of the deadline.
-        // Only enforce the deadline for fresh pending_review submissions.
+        // Bypass deadline when: reviewer sent back for revision OR admin granted override.
         $existingForDeadlineCheck = Submission::where('task_id', $record->id)
             ->where('student_id', Auth::id())
             ->whereIn('status', [
@@ -558,8 +559,9 @@ class TaskResource extends Resource
             ->first();
 
         $isNeedsRevision = $existingForDeadlineCheck?->status === SubmissionTypes::NEEDS_REVISION->value;
+        $hasOverride     = SubmissionDeadlineOverride::hasActive(Auth::id(), $record->id);
 
-        if (! $isNeedsRevision && $record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
+        if (! $isNeedsRevision && ! $hasOverride && $record->due_date && now()->gt($record->due_date->copy()->endOfDay())) {
             Log::warning('Resubmission: blocked — task overdue', [
                 'event'        => 'resubmission_blocked_overdue',
                 'candidate_id' => Auth::id(),
@@ -569,15 +571,6 @@ class TaskResource extends Resource
             Notification::make()
                 ->title('Deadline Passed')
                 ->body('The deadline for this task has passed. Resubmission is no longer accepted.')
-                ->danger()->send();
-            return;
-        }
-
-        $candidate = Auth::user();
-        if ($candidate?->hasCompletedProgram() || $candidate?->isDisqualified()) {
-            Notification::make()
-                ->title('Resubmission Not Allowed')
-                ->body('Your account does not have permission to submit assignments.')
                 ->danger()->send();
             return;
         }
@@ -623,15 +616,12 @@ class TaskResource extends Resource
                 'submitted_at'    => now(),
                 'status'          => SubmissionTypes::PENDING_REVIEW->value,
                 // Mark as resubmission so admin/reviewer see the indicator
-                // and so we can block a second resubmit until the reviewer
-                // explicitly sends it back for revision again.
                 'is_resubmission' => true,
             ]);
 
             if ($wasNeedsRevision && $existing->review) {
-                // Unlock for re-scoring. reviewer_id is deliberately kept —
-                // the same reviewer gets it back automatically, no admin
-                // reassignment needed.
+                // Unlock for re-scoring. reviewer_id deliberately kept —
+                // the same reviewer gets it back automatically, no reassignment needed.
                 $existing->review->update(['is_completed' => false]);
 
                 Log::info('Resubmission: review unlocked, reviewer retained', [

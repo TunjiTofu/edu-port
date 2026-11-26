@@ -10,6 +10,7 @@ use App\Mail\BulkReviewerAssignedMail;
 use App\Models\Review;
 use App\Models\Role;
 use App\Models\Submission;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\Utility\Constants;
 use Carbon\Carbon;
@@ -248,6 +249,165 @@ class SubmissionResource extends Resource
             // fetches table data asynchronously — each well within the limit.
             ->deferLoading()
             ->defaultPaginationPageOption(25)
+            ->headerActions([
+                // ── Upload a file on behalf of a student ─────────────────────
+                // Creates/replaces a submission exactly as if the student did it.
+                // No notification is sent. The file is stored under the student's
+                // name, not the admin's.
+                Tables\Actions\Action::make('upload_for_student')
+                    ->label('Upload for Student')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('primary')
+                    ->modalHeading('Upload Submission on Behalf of Student')
+                    ->modalDescription('This creates a submission as if the student uploaded it themselves. No notification is sent to the student.')
+                    ->modalWidth('lg')
+                    ->form([
+                        Forms\Components\Select::make('student_id')
+                            ->label('Student')
+                            ->options(fn () =>
+                            User::where('role_id', Constants::STUDENT_ID)
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                            )
+                            ->searchable()
+                            ->required()
+                            ->live(),
+
+                        Forms\Components\Select::make('task_id')
+                            ->label('Task')
+                            ->options(fn (Forms\Get $get) => Task::where('is_active', true)
+                                ->when($get('student_id'), fn ($q, $studentId) =>
+                                $q->whereHas('section.trainingProgram.enrollments', fn ($eq) =>
+                                $eq->where('student_id', $studentId)
+                                )
+                                )
+                                ->with('section')
+                                ->get()
+                                ->mapWithKeys(fn ($t) =>
+                                [$t->id => ($t->section?->name ? "[{$t->section->name}] " : '') . $t->title]
+                                )
+                            )
+                            ->searchable()
+                            ->required()
+                            ->helperText('Tasks filtered to the selected student\'s enrolled program.'),
+
+                        Forms\Components\FileUpload::make('file')
+                            ->label('PDF File')
+                            ->acceptedFileTypes(['application/pdf'])
+                            ->maxSize(2048)
+                            ->required()
+                            ->directory('submissions/temp')
+                            ->preserveFilenames()
+                            ->disk('public')
+                            ->storeFileNamesIn('original_file_name')
+                            ->helperText('PDF only — max 2 MB.')
+                            ->validationMessages([
+                                'max'   => 'Maximum file size is 2 MB.',
+                                'mimes' => 'Only PDF files are accepted.',
+                            ]),
+
+                        Forms\Components\Textarea::make('student_notes')
+                            ->label('Notes (Optional)')
+                            ->rows(3)
+                            ->placeholder('Any notes for the reviewer...'),
+                    ])
+                    ->action(function (array $data) {
+                        $studentId  = $data['student_id'];
+                        $taskId     = $data['task_id'];
+                        $task       = Task::with('section')->findOrFail($taskId);
+                        $student    = User::findOrFail($studentId);
+
+                        $tempPath     = $data['file'];
+                        $sectionId    = $task->section?->id ?? 0;
+                        $timestamp    = now()->format('Y-m-d_H-i-s');
+                        $userName     = str_replace(' ', '_', $student->name); // student's name, not admin's
+                        $originalName = str_replace(' ', '_', $data['original_file_name'] ?? basename($tempPath));
+                        $finalDir     = "submissions/{$sectionId}/{$taskId}";
+                        $fileName     = "{$userName}-{$timestamp}-{$originalName}";
+                        $newPath      = "{$finalDir}/{$fileName}";
+
+                        \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($finalDir);
+
+                        if (! \Illuminate\Support\Facades\Storage::disk('public')->exists($tempPath)) {
+                            Notification::make()->title('File Error')->body('Uploaded file not found.')->danger()->send();
+                            return;
+                        }
+
+                        // Server-side PDF check
+                        $mime = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($tempPath);
+                        if ($mime !== 'application/pdf') {
+                            \Illuminate\Support\Facades\Storage::disk('public')->delete($tempPath);
+                            Notification::make()->title('Invalid File')->body('Only PDF files are accepted.')->danger()->send();
+                            return;
+                        }
+
+                        $existing = Submission::where('student_id', $studentId)
+                            ->where('task_id', $taskId)
+                            ->first();
+
+                        // Delete old file if replacing
+                        if ($existing) {
+                            $oldPath = $existing->file_path . '/' . $existing->file_name;
+                            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($oldPath)) {
+                                \Illuminate\Support\Facades\Storage::disk('public')->delete($oldPath);
+                            }
+                        }
+
+                        \Illuminate\Support\Facades\Storage::disk('public')->move($tempPath, $newPath);
+
+                        $fileSize = \Illuminate\Support\Facades\Storage::disk('public')->size($newPath);
+                        $fileType = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($newPath);
+
+                        if ($existing) {
+                            $existing->update([
+                                'file_name'     => $fileName,
+                                'file_path'     => $finalDir,
+                                'file_size'     => $fileSize,
+                                'file_type'     => $fileType,
+                                'student_notes' => $data['student_notes'] ?? $existing->student_notes,
+                                'submitted_at'  => now(),
+                                'status'        => \App\Enums\SubmissionTypes::PENDING_REVIEW->value,
+                                'is_resubmission' => false,
+                            ]);
+
+                            // Reset the existing review
+                            if ($existing->review) {
+                                $existing->review->update([
+                                    'score'        => 0,
+                                    'comments'     => null,
+                                    'is_completed' => false,
+                                    'reviewed_at'  => null,
+                                ]);
+                            }
+                        } else {
+                            Submission::create([
+                                'task_id'       => $taskId,
+                                'student_id'    => $studentId,
+                                'file_name'     => $fileName,
+                                'file_path'     => $finalDir,
+                                'file_size'     => $fileSize,
+                                'file_type'     => $fileType,
+                                'student_notes' => $data['student_notes'] ?? null,
+                                'submitted_at'  => now(),
+                                'status'        => \App\Enums\SubmissionTypes::PENDING_REVIEW->value,
+                            ]);
+                        }
+
+                        \Illuminate\Support\Facades\Log::info('Admin uploaded submission on behalf of student', [
+                            'event'      => 'admin_upload_for_student',
+                            'student_id' => $studentId,
+                            'task_id'    => $taskId,
+                            'admin_id'   => Auth::id(),
+                            'replaced'   => (bool) $existing,
+                        ]);
+
+                        Notification::make()
+                            ->title($existing ? 'Submission Replaced' : 'Submission Created')
+                            ->body("File uploaded for {$student->name} — Task: {$task->title}")
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->columns([
                 Tables\Columns\TextColumn::make('student.name')
                     ->label('Student')
@@ -412,15 +572,14 @@ class SubmissionResource extends Resource
                 Tables\Actions\EditAction::make()->iconButton()->tooltip('Edit'),
 
                 Tables\Actions\Action::make('admin_review')
-                    ->icon('heroicon-o-pencil')
+                    ->icon('heroicon-o-pencil-square')
                     ->color('info')
                     ->iconButton()
                     ->tooltip('Review & Score')
                     ->url(fn (?Submission $record) => $record
                         ? static::getUrl('review', ['record' => $record->id])
                         : null
-                    )
-                    ->openUrlInNewTab(),
+                    ),
 
                 Tables\Actions\Action::make('download')
                     ->icon('heroicon-o-arrow-down-tray')
