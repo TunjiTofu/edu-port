@@ -17,7 +17,7 @@
                 are not included.
             </x-slot>
 
-            <form wire:submit="download" class="space-y-6">
+            <div class="space-y-6">
                 {{ $this->form }}
 
                 @if ($s = $this->summary)
@@ -47,15 +47,33 @@
                     </dl>
                 @endif
 
-                <x-filament::button
-                    type="submit"
-                    icon="heroicon-o-arrow-down-tray"
-                    :disabled="($this->summary['completed'] ?? 0) === 0"
-                >
-                    <span wire:loading.remove wire:target="download">Download PDF</span>
-                    <span wire:loading wire:target="download">Preparing PDF…</span>
-                </x-filament::button>
-            </form>
+                @if (($this->summary['completed'] ?? 0) > 0 && $this->downloadUrl)
+                    {{-- Plain link (not a Livewire action): the server streams the file from disk. --}}
+                    <div x-data="{ preparing: false }" class="space-y-2">
+                        <x-filament::button
+                            tag="a"
+                            :href="$this->downloadUrl"
+                            icon="heroicon-o-arrow-down-tray"
+                            x-on:click="preparing = true; setTimeout(() => preparing = false, 20000)"
+                        >
+                            <span x-show="! preparing">Download PDF</span>
+                            <span x-show="preparing" x-cloak>Preparing PDF…</span>
+                        </x-filament::button>
+                        <p x-show="preparing" x-cloak class="text-sm text-gray-500 dark:text-gray-400">
+                            Your portfolio is being put together. This can take up to a minute; the download will start by itself.
+                        </p>
+                    </div>
+                @else
+                    <x-filament::button icon="heroicon-o-arrow-down-tray" disabled>
+                        Download PDF
+                    </x-filament::button>
+                    @if ($this->summary)
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            None of your tasks in this program have been completed yet.
+                        </p>
+                    @endif
+                @endif
+            </div>
         </x-filament::section>
     @endif
 </x-filament-panels::page>

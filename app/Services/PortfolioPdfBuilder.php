@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\StreamingFpdi;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -28,9 +29,16 @@ class PortfolioPdfBuilder
 {
     private string $workDir;
 
-    /** @return string The finished PDF's bytes. */
-    public function build(array $data): string
+    /**
+     * Build the portfolio and write it to $outPath.
+     *
+     * Everything goes through files on disk (never the whole PDF as a PHP
+     * string), so memory stays flat as portfolios grow; see StreamingFpdi.
+     */
+    public function buildToFile(array $data, string $outPath): void
     {
+        $this->purgeStaleTempFiles();
+
         $this->workDir = storage_path('app/portfolio-tmp/' . uniqid('p', true));
         File::ensureDirectoryExists($this->workDir);
 
@@ -60,9 +68,33 @@ class PortfolioPdfBuilder
                 }
             }
 
-            return $this->merge($parts, $data['student']['name']);
+            $this->merge($parts, $data['student']['name'], $outPath);
         } finally {
             File::deleteDirectory($this->workDir);
+        }
+    }
+
+    /** Where finished portfolios wait to be sent (deleted after sending). */
+    public static function outputDir(): string
+    {
+        $dir = storage_path('app/portfolio-tmp');
+        File::ensureDirectoryExists($dir);
+
+        return $dir;
+    }
+
+    /**
+     * Downloads delete their file after sending, but an aborted download or a
+     * crashed request can leave files behind: clear anything over an hour old.
+     */
+    private function purgeStaleTempFiles(): void
+    {
+        $cutoff = time() - 3600;
+
+        foreach (glob(self::outputDir() . '/*') ?: [] as $path) {
+            if (@filemtime($path) < $cutoff) {
+                is_dir($path) ? File::deleteDirectory($path) : @unlink($path);
+            }
         }
     }
 
@@ -72,10 +104,12 @@ class PortfolioPdfBuilder
 
         // Subsetting embeds only the glyphs used: keeps DejaVu (needed for names
         // like "Ọlá") without adding ~1 MB of font per rendered part.
-        file_put_contents($path, Pdf::loadView($view, $data)
+        $pdf = Pdf::loadView($view, $data)
             ->setPaper('a4')
-            ->setOption('enable_font_subsetting', true)
-            ->output());
+            ->setOption('enable_font_subsetting', true);
+
+        file_put_contents($path, $pdf->output());
+        unset($pdf); // free dompdf's layout tree before the next part
 
         return $path;
     }
@@ -95,8 +129,13 @@ class PortfolioPdfBuilder
                 return $fail('The file was not found in storage.');
             }
 
+            // Stream the copy: never hold the uploaded file in memory.
             $local = "{$this->workDir}/submission-{$index}.pdf";
-            file_put_contents($local, $disk->get($task['file_path']));
+            $in    = $disk->readStream($task['file_path']);
+            $out   = fopen($local, 'wb');
+            stream_copy_to_stream($in, $out);
+            fclose($out);
+            is_resource($in) && fclose($in);
         } catch (\Throwable $e) {
             Log::warning('Portfolio: could not fetch submission file', ['path' => $task['file_path'], 'error' => $e->getMessage()]);
 
@@ -163,9 +202,9 @@ class PortfolioPdfBuilder
     }
 
     /** @param string[] $files */
-    private function merge(array $files, string $studentName): string
+    private function merge(array $files, string $studentName, string $outPath): void
     {
-        $pdf = new Fpdi();
+        $pdf = new StreamingFpdi();
         $pdf->SetAutoPageBreak(false);
         $pdf->AliasNbPages('{nb}');
         $pdf->SetTitle($this->latin1("Portfolio - {$studentName}"));
@@ -192,7 +231,7 @@ class PortfolioPdfBuilder
             }
         }
 
-        return $pdf->Output('S');
+        $pdf->writeToFile($outPath);
     }
 
     /** FPDF core fonts are Windows-1252; transliterate anything else. */
