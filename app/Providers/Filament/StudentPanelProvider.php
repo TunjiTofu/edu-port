@@ -10,6 +10,7 @@ use App\Filament\Student\Widgets\RecentSubmissionsWidget;
 use App\Filament\Student\Widgets\StudentProgressWidget;
 use App\Filament\Student\Widgets\UpcomingDeadlinesWidget;
 use App\Filament\Widgets\AnnouncementsWidget;
+use App\Http\Controllers\PortfolioDownloadController;
 use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\EnsureProgramNotCompleted;
 use App\Http\Middleware\EnsureUserIsStudent;
@@ -27,6 +28,7 @@ use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
@@ -95,6 +97,13 @@ class StudentPanelProvider extends PanelProvider
                     ->icon('heroicon-o-key')
                     ->sort(10),
             ])
-            ->profile(isSimple: false);
+            ->profile(isSimple: false)
+            // Plain HTTP download (not Livewire) so large portfolios stream from disk.
+            // Runs behind this panel's auth + student middleware.
+            ->authenticatedRoutes(function () {
+                Route::get('print-portfolio/download/{program}', PortfolioDownloadController::class)
+                    ->whereNumber('program')
+                    ->name('print-portfolio.download');
+            });
     }
 }
